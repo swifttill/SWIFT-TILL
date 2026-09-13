@@ -141,3 +141,13 @@ Phase 9 should replace the local JSON API persistence with a real Neon/PostgreSQ
 ## Clean package policy
 
 No `node_modules`, no build cache, no test database, no `.env` secrets.
+
+
+## V10 Admin CRUD + R2 Media
+
+- Admin CRUD delete endpoints added.
+- Admin delete UI actions added.
+- Cloudflare R2 image upload boundary implemented.
+- Local upload fallback retained for development when R2 env is missing.
+- Seed script loads `.env` directly.
+- R2 variables are documented for Render deployment.

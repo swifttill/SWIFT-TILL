@@ -1,8 +1,8 @@
 {
   "name": "swifttill-pos-monorepo",
-  "version": "9.0.0",
+  "version": "10.0.0",
   "private": true,
-  "description": "SwiftTill POS V9 real database and auth foundation: Neon PostgreSQL, Prisma migrations, password hashing, token sessions, role/permission enforcement, and production-ready auth/db boundaries.",
+  "description": "SwiftTill POS V10 admin CRUD and Cloudflare R2 media integration: Prisma-ready admin endpoints, secure image upload boundary, company/receipt settings, and production deployment hardening.",
   "workspaces": [
     "apps/api",
     "apps/web",
@@ -27,11 +27,12 @@
     "node": ">=18.0.0"
   },
   "dependencies": {
-    "@prisma/client": "^5.22.0",
     "bcryptjs": "^2.4.3",
-    "dotenv": "^17.4.2",
     "jsonwebtoken": "^9.0.2",
-    "zod": "^3.23.8"
+    "zod": "^3.23.8",
+    "@prisma/client": "^5.22.0",
+    "dotenv": "^16.4.5",
+    "@aws-sdk/client-s3": "^3.637.0"
   },
   "devDependencies": {
     "prisma": "^5.22.0"
