@@ -1,16 +1,19 @@
-SwiftTill POS V27 Modern POS UI System Rebuild
+SwiftTill POS V28 validation
 
 API syntax: PASS
-Web JS syntax: PASS
+Web JavaScript syntax: PASS
+DB client syntax: PASS
+DB adapter syntax: PASS
 Auth smoke test: PASS
+Storage/R2 syntax: PASS
 Print agent syntax: PASS
-ZIP integrity: PASS
+ZIP integrity: pending at packaging time
 
 Key fixes:
-- Compact header and top action row
-- Back to POS placement fixed
-- Category color system
-- Modern item/card/action button styling
-- Image aspect safety
-- Admin back-office polish
-- Same-screen POS workflow preserved
+- compact right bill panel
+- order detail compact grid
+- cart item area enlarged
+- total/actions compressed
+- three secondary bill actions on one line
+- client backup/create/download/restore controls hidden
+- automatic backup/history retained internally

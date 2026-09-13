@@ -629,3 +629,61 @@ body{
   .topbar{grid-template-columns:1fr!important}.top-items{display:grid!important;grid-template-columns:repeat(2,minmax(0,1fr));}
   .item-grid{grid-template-columns:repeat(2,minmax(0,1fr))!important}.item-card{width:100%!important;min-width:0!important;max-width:none!important;}
 }
+
+/* ============================================================
+   SwiftTill V28 Cart Density + Client Admin Cleanup
+   - more cart item space, compact totals/actions, hidden backup controls
+============================================================ */
+:root{
+  --bill-w:clamp(300px,22vw,350px);
+}
+.right-rail{min-height:0!important;}
+.bill{padding:8px 10px!important;display:flex!important;flex-direction:column!important;gap:6px!important;min-height:0!important;}
+.compact-bill-head{padding-bottom:5px!important;margin:0!important;}
+.compact-bill-head h2{font-size:15px!important;line-height:1.05!important;}
+.compact-bill-head b{font-size:12px!important;color:#52657f!important;}
+.compact-orderbox{margin:5px 0 4px!important;padding:7px!important;border-radius:13px!important;background:linear-gradient(135deg,#f1f7ff,#fff)!important;}
+.order-meta-grid{display:grid;grid-template-columns:1fr 1fr;gap:6px;}
+.order-meta-cell{min-width:0;border:1px solid #dbe7f7;background:#fff;border-radius:10px;padding:5px 7px;display:grid;gap:1px;}
+.order-meta-cell span{font-size:9px;font-weight:900;color:#6a7e9d;text-transform:uppercase;letter-spacing:.025em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.order-meta-cell b{font-size:12px;line-height:1.1;color:#071f49;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.cart-density-list{flex:1 1 auto!important;min-height:190px!important;padding-right:4px!important;margin-top:2px!important;border:1px dashed #dbe7f7;border-radius:14px;padding:6px!important;background:#fbfdff;}
+.cart-empty-compact{min-height:150px!important;height:100%!important;border:0!important;background:transparent!important;border-radius:12px!important;padding:10px!important;}
+.cart-line{grid-template-columns:42px minmax(0,1fr) auto!important;gap:7px!important;padding:7px 0!important;}
+.cart-line img{width:42px!important;height:42px!important;border-radius:10px!important;}
+.cart-line h4{font-size:12px!important;line-height:1.1!important;}
+.cart-line p{font-size:10px!important;line-height:1.2!important;}
+.line-tools button{font-size:10px!important;}
+.qty button{width:24px!important;min-height:24px!important;}
+.qty input{width:32px!important;height:24px!important;font-size:11px!important;}
+.trash{font-size:11px!important;}
+.v28-totals{gap:4px!important;padding-top:7px!important;margin-top:3px!important;border-top:1px solid #e2ebf8!important;}
+.compact-row{font-size:12px!important;line-height:1.15!important;}
+.compact-discount{grid-template-columns:1fr 68px 58px!important;gap:5px!important;font-size:11px!important;}
+.compact-discount .switch button{padding:5px 8px!important;font-size:11px!important;min-height:27px!important;}
+.compact-discount .small-input{padding:5px 7px!important;min-height:27px!important;font-size:11px!important;border-radius:9px!important;}
+.compact-total{font-size:18px!important;padding:5px 0!important;border-top:1px dashed #ccd9ea!important;}
+.compact-total b{font-size:21px!important;}
+.one-line-actions{display:grid!important;grid-template-columns:repeat(3,minmax(0,1fr))!important;gap:5px!important;margin:5px 0 4px!important;}
+.one-line-actions .mini-action{min-height:31px!important;padding:5px 5px!important;border-radius:10px!important;font-size:10px!important;white-space:nowrap!important;}
+.print-mini{background:#101b31!important;color:#fff!important;border-color:#101b31!important;}
+.move-mini{background:#eef5ff!important;color:#0b3675!important;}
+.split-mini{background:#f6f0ff!important;color:#54249d!important;}
+.compact-check{font-size:11px!important;margin:2px 0!important;gap:6px!important;}
+.compact-check input{width:15px!important;height:15px!important;}
+.compact-main-actions{grid-template-columns:.85fr 1.15fr!important;gap:8px!important;margin-top:4px!important;}
+.compact-main-actions .hold,.compact-main-actions .pay{min-height:42px!important;border-radius:13px!important;font-size:13px!important;padding:8px 10px!important;}
+.empty-cart.compact-empty{min-height:180px!important;}
+.admin-nav button[data-admin-tab="backup"], .admin-nav button[data-admin-tab="cloud"]{display:none!important;}
+.admin-layout{grid-template-columns:210px minmax(0,1fr)!important;}
+.admin-nav{gap:7px!important;}
+.admin-nav button{min-height:37px!important;padding:8px 10px!important;}
+@media (max-height:760px){
+  .cart-density-list{min-height:165px!important;}
+  .compact-main-actions .hold,.compact-main-actions .pay{min-height:38px!important;font-size:12px!important;}
+  .one-line-actions .mini-action{min-height:28px!important;font-size:9.5px!important;}
+  .order-meta-cell{padding:4px 6px!important;}
+}
+@media (max-width:1180px){
+  .cart-density-list{min-height:240px!important;}
+}

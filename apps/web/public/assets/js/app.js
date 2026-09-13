@@ -885,3 +885,91 @@ async function runReport(){
     $('#exportReport')?.removeAttribute('disabled'); $('#printReportPdfBtn')?.removeAttribute('disabled'); $('#printReportThermalBtn')?.removeAttribute('disabled');
   }catch(e){ if(target) target.innerHTML=`<div class="empty-cart error-state"><b>Report failed</b><p>${esc(e.message)}</p></div>`; toast(e.message,true); }
 }
+
+/* ============================================================
+   SwiftTill V28 Cart Density + Client Admin Cleanup
+   - compact order details grid
+   - more visible item/cart area
+   - one-line bill actions
+   - client-facing raw backup actions removed from Admin
+============================================================ */
+function orderMetaGrid(o){
+  const tableName = o.type === 'DINE_IN' ? (state.tables.find(t=>t.id===o.tableId)?.name || '—') : '—';
+  const rows = o.type === 'DINE_IN'
+    ? [
+        ['Type', formatType(o.type), '🍴'],
+        ['Table', tableName, '▣'],
+        ['Guests', `${Number(o.guests||0)}`, '👥'],
+        ['Taker', o.orderTakerName || '—', '👤']
+      ]
+    : o.type === 'DELIVERY'
+      ? [
+          ['Type', 'Delivery', '🛵'],
+          ['Customer', o.customerName || '—', '👤'],
+          ['Mobile', o.mobile || '—', '☎'],
+          ['Fee', money(o.deliveryFee || 0), '₨']
+        ]
+      : [
+          ['Type', 'Takeaway', '🛍'],
+          ['Customer', o.customerName || 'Walk-in', '👤'],
+          ['Mobile', o.mobile || '—', '☎'],
+          ['Taker', o.orderTakerName || state.user?.name || '—', '👤']
+        ];
+  return `<div class="order-meta-grid">${rows.map(([label,value,icon])=>`<div class="order-meta-cell"><span>${icon} ${esc(label)}</span><b>${esc(value)}</b></div>`).join('')}</div>`;
+}
+function renderBill(){
+  const bp=$('#billPanel'); if(!bp) return;
+  if(!currentOrder){
+    bp.innerHTML=`<div class="bill-head compact-bill-head"><h2>Current Order</h2><b>—</b></div><div class="empty-cart compact-empty"><div><b>No active bill</b><p>Press New Order to start billing.</p></div></div>`;
+    return;
+  }
+  currentOrder.lines = Array.isArray(currentOrder.lines) ? currentOrder.lines : [];
+  const t=calcTotals(currentOrder);
+  const hasLines = hasOrderLines(currentOrder);
+  const printBillButton = `<button class="secondary-btn mini-action print-mini" id="printBillBtn" ${hasLines?'':'disabled title="Add item first"'}>🧾 Print</button>`;
+  const moveButton = `<button class="secondary-btn mini-action move-mini" id="moveTableBtn" ${currentOrder.type==='DINE_IN'?'':'disabled title="Move table is only for dine-in"'}>⇄ Move</button>`;
+  const splitButton = `<button class="secondary-btn mini-action split-mini" id="splitBillBtn" ${hasLines?'':'disabled title="Add item first"'}>⫶ Split</button>`;
+  const deliveryRow = currentOrder.type==='DELIVERY' ? `<div class="total-row compact-row"><span>Delivery</span><b>${money(t.deliveryFee)}</b></div>` : '';
+  bp.innerHTML=`
+    <div class="bill-head compact-bill-head"><h2>Current Order</h2><b>#${esc(currentOrder.number||'Draft')}</b></div>
+    <div class="orderbox compact-orderbox">${orderMetaGrid(currentOrder)}</div>
+    <div class="line-list cart-density-list">${currentOrder.lines.length?currentOrder.lines.map(cartLine).join(''):'<div class="empty-cart cart-empty-compact">Add items from the center menu.</div>'}</div>
+    <div class="totals compact-totals v28-totals">
+      <div class="total-row compact-row"><span>Subtotal</span><b>${money(t.subtotal)}</b></div>
+      <div class="discount-row compact-discount"><span>Discount</span><div class="switch"><button class="${currentOrder.discountType==='FIXED'?'active':''}" data-disc="FIXED">Rs</button><button class="${currentOrder.discountType==='PERCENT'?'active':''}" data-disc="PERCENT">%</button></div><input class="small-input" id="discountVal" value="${Number(currentOrder.discountValue||0)}"></div>
+      ${deliveryRow}
+      <div class="total-row big compact-total"><span>Total</span><b>${money(t.total)}</b></div>
+    </div>
+    <div class="bill-quick-actions one-line-actions">${printBillButton}${moveButton}${splitButton}</div>
+    <label class="check print-check compact-check"><input type="checkbox" id="printRemember" ${getPrintDefault()?'checked':''}> Print receipt after payment</label>
+    <div class="actions compact-main-actions"><button class="hold" id="holdBtn" ${hasLines?'':'disabled title="Add item first"'}>Ⅱ HOLD</button><button class="pay" id="payBtn" ${hasLines?'':'disabled title="Add item first"'}>▣ PAY ${money(t.total)}</button></div>`;
+  $$('[data-line-minus]').forEach(b=>b.onclick=()=>changeQty(b.dataset.lineMinus,-1));
+  $$('[data-line-plus]').forEach(b=>b.onclick=()=>changeQty(b.dataset.linePlus,1));
+  $$('[data-line-remove]').forEach(b=>b.onclick=()=>{currentOrder.lines=currentOrder.lines.filter(l=>l.lineId!==b.dataset.lineRemove);renderBill();});
+  $$('[data-line-edit]').forEach(b=>b.onclick=()=>openLineModal(b.dataset.lineEdit));
+  $$('[data-qty-input]').forEach(inp=>inp.onchange=()=>{const l=currentOrder.lines.find(x=>x.lineId===inp.dataset.qtyInput); if(l){l.qty=Math.max(1,Number(inp.value)||1); renderBill();}});
+  $$('[data-disc]').forEach(b=>b.onclick=()=>{currentOrder.discountType=currentOrder.discountType===b.dataset.disc?'NONE':b.dataset.disc; if(currentOrder.discountType==='NONE') currentOrder.discountValue=0; renderBill();});
+  const disc=$('#discountVal'); if(disc) disc.onchange=e=>{ currentOrder.discountValue=Math.max(0,Number(e.target.value)||0); if(currentOrder.discountValue>0 && currentOrder.discountType==='NONE') currentOrder.discountType='FIXED'; renderBill(); };
+  const remember=$('#printRemember'); if(remember) remember.onchange=e=>localStorage.setItem('swifttill_print_default', e.target.checked?'1':'0');
+  const hold=$('#holdBtn'); if(hold) hold.onclick=()=>saveOrder(true);
+  const pay=$('#payBtn'); if(pay) pay.onclick=()=>openPayModal();
+  const print=$('#printBillBtn'); if(print) print.onclick=()=>printCurrentBill();
+  const move=$('#moveTableBtn'); if(move && currentOrder.type==='DINE_IN') move.onclick=()=>openMoveTableModal();
+  const split=$('#splitBillBtn'); if(split) split.onclick=()=>openSplitBillModal();
+}
+const __v28BaseRenderAdminContent = renderAdminContent;
+renderAdminContent = function(){
+  if(adminTab === 'backup' || adminTab === 'cloud') adminTab = 'dashboard';
+  return __v28BaseRenderAdminContent();
+};
+renderAdmin = function(ws){
+  if(adminTab === 'backup' || adminTab === 'cloud') adminTab = 'dashboard';
+  const tabs=['dashboard','setup','reports','paid','categories','items','deals','tables','takers','payments','users','roles','settings'];
+  ws.innerHTML=`<div class="admin-layout"><div class="panel admin-nav"><div class="admin-nav-title"><b>Admin Panel</b><span>Back office</span></div>${tabs.map(t=>`<button class="${adminTab===t?'active':''}" data-admin-tab="${t}"><span class="admin-nav-icon">${tabIcon(t)}</span><span>${labelTab(t)}</span></button>`).join('')}</div><div class="panel admin-content" id="adminContent"></div></div>`;
+  $$('[data-admin-tab]').forEach(b=>b.onclick=()=>{adminTab=b.dataset.adminTab;renderAdmin(ws);});
+  renderAdminContent();
+};
+function renderBackup(c){
+  const b=state.backup||{};
+  c.innerHTML=`<div class="module-title"><div><h3>Backup & History</h3><p class="muted-note">Automatic backups run in the background. Raw backup files are owner/developer-only and hidden from restaurant staff.</p></div></div><div class="grid2"><div class="card subcard"><h3>Protected History</h3><p>Paid bills, refunds, voids, payment corrections and reports stay preserved in Neon.</p><p>Deleting menu data does not remove old paid bill/report history.</p></div><div class="card subcard"><h3>Automatic Backup Status</h3><p>Mode: <b>${esc(b.mode||'cloud/database')}</b></p><p>Daily retention: <b>${b.dailyRetentionDays||30} days</b></p><p>Monthly retention: <b>${b.monthlyRetentionMonths||12} months</b></p><p>Latest: <b>${b.latest?new Date(b.latest.exportedAt).toLocaleString():'Background backup pending'}</b></p></div></div>`;
+}

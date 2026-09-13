@@ -86,4 +86,18 @@ Key changes:
 - Same-screen POS workflow remains: order, table/menu/deal selection, cart, hold/pay/print actions.
 - Admin panel gets a more professional back-office shell without exposing cloud credentials.
 
-Version: 27.0.0-modern-pos-ui-system
+Version: 28.0.0-modern-pos-ui-system
+
+
+## Phase 28 — Cart Density + Client Admin Cleanup
+
+This phase compresses the right bill/cart panel for rush-hour billing and removes raw backup file actions from the restaurant-facing admin UI.
+
+- Order details are shown as a compact grid.
+- Cart line area gets more visible working height.
+- Subtotal/discount/total rows are compressed.
+- Print Bill, Move Table and Split Bill are in one compact action row.
+- Hold and Pay actions are tighter but still clearly separated.
+- Client admin no longer shows create/download/restore backup controls. Automatic backup/history behavior remains internal.
+- Admin sidebar no longer exposes Backup / History as a routine staff screen.
+- Version status flags added for V28.
