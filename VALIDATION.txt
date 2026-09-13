@@ -1,14 +1,7 @@
-SwiftTill POS V12 validation
-
-API server syntax: PASS
-DB client syntax: PASS
-DB adapter syntax: PASS
-Auth package syntax: PASS
-Storage/R2 syntax: PASS
-Print agent syntax: PASS
-Public health route: ADDED
-Safe env-check route: ADDED
-Production R2 enforcement: ADDED
-PostgreSQL cloud-state store: ADDED
-Local upload fallback: DEV ONLY
-ZIP integrity: PASS
+SwiftTill POS V14 validation
+API syntax PASS
+Web JS syntax PASS
+DB seed syntax PASS
+No demo menu/table/taker seed PASS
+Order engine status init PASS
+ZIP integrity PASS

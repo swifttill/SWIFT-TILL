@@ -4,7 +4,7 @@ const { getPrisma, hasDatabaseUrl } = require('./src/client');
 
 const PERMISSIONS = [
   'pos.view','pos.create','pos.edit','pos.hold','pos.pay','pos.void','pos.refund','pos.transfer_table','pos.payment_correction',
-  'reports.view','reports.export','admin.menu','admin.tables','admin.staff','admin.users','admin.roles','admin.settings','admin.payments','admin.printer','admin.branding'
+  'reports.view','reports.export','admin.menu','admin.tables','admin.staff','admin.users','admin.roles','admin.settings','admin.payments','admin.printer','admin.branding','cloud.sync','backup.manage'
 ];
 const CASHIER_PERMS = ['pos.view','pos.create','pos.edit','pos.hold','pos.pay'];
 const MANAGER_PERMS = [...CASHIER_PERMS,'reports.view','reports.export','pos.void','pos.refund','pos.transfer_table','pos.payment_correction','admin.menu','admin.tables','admin.staff','admin.payments','admin.printer'];
@@ -53,15 +53,15 @@ async function main() {
   const db = await getPrisma();
 
   const org = await db.organization.upsert({
-    where: { id: 'org_swifttill_demo' },
-    update: { name: 'SwiftTill Demo Restaurant', legalName: 'SwiftTill Demo Restaurant', phone: '03XX-XXXXXXX', address: 'Rawalpindi, Pakistan', city: 'Rawalpindi', country: 'Pakistan', currency: 'PKR' },
-    create: { id: 'org_swifttill_demo', name: 'SwiftTill Demo Restaurant', legalName: 'SwiftTill Demo Restaurant', phone: '03XX-XXXXXXX', address: 'Rawalpindi, Pakistan', city: 'Rawalpindi', country: 'Pakistan', currency: 'PKR' }
+    where: { id: 'org_swifttill' },
+    update: { name: 'SwiftTill POS', legalName: '', phone: '', address: '', city: '', country: 'Pakistan', currency: 'PKR' },
+    create: { id: 'org_swifttill', name: 'SwiftTill POS', legalName: '', phone: '', address: '', city: '', country: 'Pakistan', currency: 'PKR' }
   });
 
   const branch = await db.branch.upsert({
     where: { id: 'br_main' },
-    update: { organizationId: org.id, name: 'Main Branch', code: 'MAIN', address: 'Rawalpindi, Pakistan', active: true },
-    create: { id: 'br_main', organizationId: org.id, name: 'Main Branch', code: 'MAIN', address: 'Rawalpindi, Pakistan', active: true }
+    update: { organizationId: org.id, name: 'Main Branch', code: 'MAIN', address: '', active: true },
+    create: { id: 'br_main', organizationId: org.id, name: 'Main Branch', code: 'MAIN', address: '', active: true }
   });
 
   await upsertPermissions(db);
@@ -76,64 +76,16 @@ async function main() {
   await upsertUser(db, { id: 'usr_manager', branchId: branch.id, name: 'Manager', email: 'manager@swifttill.local', password: 'manager123', roleId: manager.id, pin: '2222' });
   await upsertUser(db, { id: 'usr_cashier', branchId: branch.id, name: 'Cashier', email: 'cashier@swifttill.local', password: 'cashier123', roleId: cashier.id, pin: '1111' });
 
-  const cats = [
-    ['cat_burgers','Burgers',1], ['cat_pizza','Pizza',2], ['cat_sides','Sides',3], ['cat_drinks','Drinks',4], ['cat_desserts','Desserts',5]
-  ];
-  for (const [id, name, sort] of cats) {
-    await db.category.upsert({ where: { id }, update: { branchId: branch.id, name, sort, active: true }, create: { id, branchId: branch.id, name, sort, active: true } });
-  }
-
-  const items = [
-    ['itm_zinger','Zinger Burger','cat_burgers',650,1,[['Cheese',100],['Extra Patty',220],['Extra Sauce',60]]],
-    ['itm_beef','Beef Burger','cat_burgers',750,2,[['Cheese',100],['Extra Patty',260]]],
-    ['itm_pizza','Pizza Slice','cat_pizza',450,3,[['Extra Cheese',120]]],
-    ['itm_fries','Fries','cat_sides',300,4,[['Mayo Dip',50],['Garlic Dip',70]]],
-    ['itm_loaded','Loaded Fries','cat_sides',550,5,[['Extra Cheese',120]]],
-    ['itm_coke','Coke','cat_drinks',180,6,[]],
-    ['itm_cupcake','Cup Cake','cat_desserts',280,7,[]]
-  ];
-  for (const [id, name, categoryId, price, sort, modifiers] of items) {
-    await db.menuItem.upsert({
-      where: { id },
-      update: { branchId: branch.id, categoryId, name, price, sort, active: true, soldOut: false },
-      create: { id, branchId: branch.id, categoryId, name, price, sort, active: true, soldOut: false }
-    });
-    for (const [modName, modPrice] of modifiers) {
-      const existing = await db.modifier.findFirst({ where: { itemId: id, name: modName } });
-      if (existing) await db.modifier.update({ where: { id: existing.id }, data: { price: modPrice, active: true } });
-      else await db.modifier.create({ data: { itemId: id, name: modName, price: modPrice, active: true } });
-    }
-  }
-
-  const deals = [
-    ['deal_family','Family Deal','2 Burgers + Fries + 2 Drinks',2100,1,[['itm_zinger',2],['itm_fries',1],['itm_coke',2]]],
-    ['deal_lunch','Lunch Combo','Burger + Fries + Drink',950,2,[['itm_zinger',1],['itm_fries',1],['itm_coke',1]]]
-  ];
-  for (const [id, name, description, price, sort, dealItems] of deals) {
-    await db.deal.upsert({ where: { id }, update: { branchId: branch.id, name, description, price, sort, active: true }, create: { id, branchId: branch.id, name, description, price, sort, active: true } });
-    await db.dealItem.deleteMany({ where: { dealId: id } });
-    for (const [itemId, qty] of dealItems) await db.dealItem.create({ data: { dealId: id, itemId, qty } });
-  }
-
-  for (let i = 1; i <= 12; i++) {
-    await db.diningTable.upsert({
-      where: { id: `tbl_${i}` },
-      update: { branchId: branch.id, name: `T${i}`, seats: i < 3 ? 2 : i < 9 ? 4 : 6, floor: 'Ground Floor', sort: i, active: true },
-      create: { id: `tbl_${i}`, branchId: branch.id, name: `T${i}`, seats: i < 3 ? 2 : i < 9 ? 4 : 6, floor: 'Ground Floor', sort: i, active: true }
-    });
-  }
-
-  for (const [id, name] of [['tak_ali','Ali Ahmed'], ['tak_sara','Sara Khan'], ['tak_bilal','Bilal Hassan']]) {
-    await db.orderTaker.upsert({ where: { id }, update: { branchId: branch.id, name, active: true }, create: { id, branchId: branch.id, name, active: true } });
-  }
+  // Production seed intentionally does not create menu categories, menu items, deals, tables or order takers.
+  // Add all real business data from the Admin panel so Render + Neon + R2 tests are clean.
 
   await db.receiptSettings.upsert({
     where: { branchId: branch.id },
-    update: { width: '80mm', copies: 1, showLogo: true, headerText: 'Fresh food, fast billing', footerText: 'Thank you. Visit again.' },
-    create: { branchId: branch.id, width: '80mm', copies: 1, showLogo: true, headerText: 'Fresh food, fast billing', footerText: 'Thank you. Visit again.' }
+    update: { width: '80mm', copies: 1, showLogo: true, headerText: '', footerText: '' },
+    create: { branchId: branch.id, width: '80mm', copies: 1, showLogo: true, headerText: '', footerText: '' }
   });
 
-  console.log('SwiftTill PostgreSQL seed complete. Demo branch, users, roles, permissions, menu, deals, tables, order takers and receipt settings are ready.');
+  console.log('SwiftTill PostgreSQL seed complete. Bootstrap admin, roles, permissions and empty production setup are ready. Add real menu, tables, order takers and branding from Admin.');
 }
 
 main().catch(e => { console.error(e); process.exit(1); });

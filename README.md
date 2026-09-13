@@ -198,3 +198,8 @@ https://swift-till.onrender.com/api/env-check
 ## Phase 13
 
 Real POS order engine hardening: synchronous persistence, stricter order/payment validation, cash-change rules and `/api/order-engine/status`.
+
+
+## Phase 14 — Production Data Clean
+
+This phase removes demo restaurant/catalog/table/order-taker seed data from the runtime bootstrap. The app now starts with only bootstrap access, roles, permissions and payment methods. Real business logo, categories, items, deals, tables and order takers must be added from Admin and saved to Neon/R2. It also fixes `/api/order-engine/status` database initialization.
