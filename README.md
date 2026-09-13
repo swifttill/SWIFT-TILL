@@ -197,6 +197,11 @@ This package adds a client-facing operational UX hardening pass:
 Version: `34.0.0-mobile-reports-ops-audit`
 
 
-## Phase 35 — Original Logo Favicon Restore
+## Phase 36 — Original Logo Favicon Restore
 
 Restored browser/favicon/PWA icons from the original SwiftTill logo asset, with cache-busting links so the browser tab refreshes after deploy.
+
+
+## Phase 36 — Original Logo Favicon Size Fix
+
+The favicon still uses the original SwiftTill logo mark. It is now cropped tighter and scaled up to fill the favicon canvas so it appears larger in browser tabs. No redesigned artwork was introduced. Cache-busting is updated to `v=36`.
