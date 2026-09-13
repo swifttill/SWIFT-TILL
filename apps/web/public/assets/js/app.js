@@ -9,6 +9,7 @@ let centerMode = 'menu';
 let categoryId = 'all';
 let currentOrder = null;
 let adminTab = 'dashboard';
+let reportType = 'daily';
 let selectedOrderType = 'DINE_IN';
 let lastReceipt = null;
 let busyCount = 0;
@@ -367,9 +368,22 @@ function receiptHTML(r){
 function openOpenShift(){ openModal(`<div class="modal-head"><h2>Open Shift</h2><button class="x" onclick="closeModal()">×</button></div><div class="field"><label>Opening Cash</label><input id="openingCash" type="number" value="5000"></div><button class="primary-btn" style="width:100%" id="doOpenShift">Start Shift</button>`); $('#doOpenShift').onclick=async()=>{try{await api('/api/shift/open',{openingCash:Number($('#openingCash').value||0)});closeModal();await loadState();renderShell();toast('Shift opened');}catch(e){toast(e.message,true);}}; }
 function openCloseShift(){ openModal(`<div class="modal-head"><h2>Close Shift</h2><button class="x" onclick="closeModal()">×</button></div><p class="muted-note">Count physical cash and close the active shift.</p><div class="field"><label>Counted Cash</label><input id="countedCash" type="number" value="0"></div><button class="primary-btn" style="width:100%" id="doCloseShift">Close Shift</button>`); $('#doCloseShift').onclick=async()=>{try{const j=await api('/api/shift/close',{countedCash:Number($('#countedCash').value||0)});closeModal();await loadState();renderShell();toast(`Shift closed. Difference ${money(j.shift.difference)}`);}catch(e){toast(e.message,true);}}; }
 function safeArr(v){ return Array.isArray(v) ? v : []; }
+function reportMenuButton(key,label,sub=''){
+  return `<button class="${reportType===key?'active':''}" data-report-type="${key}"><b>${esc(label)}</b>${sub?`<span>${esc(sub)}</span>`:''}</button>`;
+}
+function reportDateDefaults(kind){
+  const d = new Date();
+  const today = d.toISOString().slice(0,10);
+  if(kind==='daily' || kind==='x' || kind==='z') return { from: today, to: today };
+  if(kind==='y'){ const y=new Date(d.getFullYear(),0,1); return { from: y.toISOString().slice(0,10), to: today }; }
+  d.setDate(d.getDate()-30); return { from: d.toISOString().slice(0,10), to: today };
+}
+function currentReportTitle(){
+  return ({daily:'Daily Sales Report',itemwise:'Item Wise Sales Report',category:'Category Wise Report',payment:'Payment Mode Report',custom:'Custom Detailed Report',x:'X Report - Current Shift Snapshot',y:'Y Report - Period Summary',z:'Z Report - Closed Shift Summary',discount:'Discount Report',voidrefund:'Void / Refund Report',ordertype:'Order Type Report'}[reportType] || 'Sales Report');
+}
 function renderReports(ws){
   try{
-    const today = new Date().toISOString().slice(0,10);
+    const defs = reportDateDefaults(reportType);
     const users = safeArr(state.users), takers = safeArr(state.orderTakers), items = safeArr(state.items), deals = safeArr(state.deals), cats = safeArr(state.categories), shifts = safeArr(state.shifts), pays = safeArr(state.paymentMethods);
     const userOptions = users.map(u=>`<option value="${esc(u.id)}">${esc(u.name)}</option>`).join('');
     const takerOptions = takers.map(t=>`<option value="${esc(t.id)}">${esc(t.name)}</option>`).join('');
@@ -377,68 +391,116 @@ function renderReports(ws){
     const catOptions = cats.filter(c=>c.id!=='cat_all' && c.id!=='all').map(c=>`<option value="${esc(c.id)}">${esc(c.name)}</option>`).join('');
     const shiftOptions = shifts.map(s=>`<option value="${esc(s.id)}">Shift #${s.number} - ${esc(s.cashierName||'')} - ${s.openedAt?new Date(s.openedAt).toLocaleString():''}</option>`).join('');
     const paymentOptions = pays.filter(p=>p.active!==false).map(p=>`<option value="${esc(p.name)}">${esc(p.name)}</option>`).join('');
-    ws.innerHTML=`<div class="report-page card subcard admin-report-page">
-      <div class="module-title"><div><h3>${esc(state.settings?.reportTitle||'Sales Reports')}</h3><p class="muted-note">Real reports from paid bills saved in Neon. Use Last 30 Days for monthly history.</p></div><div class="actions-mini"><button class="ghost-btn" id="exportReport">Export CSV / Excel</button><button class="ghost-btn" id="printReportBtn">Print Report</button></div></div>
-      <div class="report-tabs"><button class="active" data-report-tab="sales">Sales</button><button data-report-tab="payment">Payment Mode</button><button data-report-tab="items">Item Wise</button><button data-report-tab="categories">Category Wise</button><button data-report-tab="discounts">Discounts</button><button data-report-tab="voids">Void / Refund</button><button data-report-tab="xz">X / Z</button></div>
-      <div class="report-filter-grid">
-        <div class="field"><label>From</label><input type="date" id="fromDate" value="${today}"></div>
-        <div class="field"><label>To</label><input type="date" id="toDate" value="${today}"></div>
-        <div class="field"><label>Payment Mode</label><select id="paymentMode"><option value="">All</option>${paymentOptions}</select></div>
-        <div class="field"><label>Order Type</label><select id="orderType"><option value="">All</option><option value="DINE_IN">Dine In</option><option value="DELIVERY">Delivery</option><option value="TAKEAWAY">Takeaway</option></select></div>
-        <div class="field"><label>Item / Deal</label><select id="itemId"><option value="">All</option>${itemOptions}</select></div>
-        <div class="field"><label>Category</label><select id="categoryFilter"><option value="">All</option>${catOptions}</select></div>
-        <div class="field"><label>Cashier</label><select id="cashierId"><option value="">All</option>${userOptions}</select></div>
-        <div class="field"><label>Order Taker</label><select id="orderTakerId"><option value="">All</option>${takerOptions}</select></div>
-        <div class="field"><label>Shift</label><select id="shiftId"><option value="">All</option>${shiftOptions}</select></div>
-        <label class="check"><input type="checkbox" id="discountOnly"> Discounted only</label>
-        <label class="check"><input type="checkbox" id="refundOnly"> Refunded only</label>
+    ws.innerHTML=`<div class="report-page admin-report-shell">
+      <div class="module-title"><div><h3>Reports</h3><p class="muted-note">Separate restaurant reports with relevant filters, Excel export and bill-style print format.</p></div><div class="actions-mini"><button class="ghost-btn" id="exportReport">Export Excel</button><button class="ghost-btn" id="printReportBtn">Print</button></div></div>
+      <div class="reports-layout">
+        <div class="report-menu card subcard">
+          <h4>Main Reports</h4>
+          ${reportMenuButton('daily','Daily','Today sales and bills')}
+          ${reportMenuButton('itemwise','Item Wise','Item quantity and sales')}
+          ${reportMenuButton('category','Category Wise','Category totals')}
+          ${reportMenuButton('payment','Payment Mode','Cash/card/online')}
+          ${reportMenuButton('custom','Custom','Full detailed report')}
+          <h4>Shift Reports</h4>
+          ${reportMenuButton('x','X Report','Current shift snapshot')}
+          ${reportMenuButton('y','Y Report','Period summary')}
+          ${reportMenuButton('z','Z Report','Closed shift summary')}
+          <h4>Control Reports</h4>
+          ${reportMenuButton('discount','Discounts','Discounted bills')}
+          ${reportMenuButton('voidrefund','Void / Refund','Refund and void history')}
+          ${reportMenuButton('ordertype','Order Type','Dine-in/delivery/takeaway')}
+        </div>
+        <div class="report-work card subcard">
+          <div class="report-headline"><h3 id="reportTitle">${esc(currentReportTitle())}</h3><span>${esc(state.settings?.businessName||'SwiftTill POS')}</span></div>
+          <div class="report-filter-grid compact-filters" id="reportFilters">
+            <div class="field report-filter date-filter"><label>From</label><input type="date" id="fromDate" value="${defs.from}"></div>
+            <div class="field report-filter date-filter"><label>To</label><input type="date" id="toDate" value="${defs.to}"></div>
+            <div class="field report-filter payment-filter"><label>Payment Mode</label><select id="paymentMode"><option value="">All</option>${paymentOptions}</select></div>
+            <div class="field report-filter ordertype-filter"><label>Order Type</label><select id="orderType"><option value="">All</option><option value="DINE_IN">Dine In</option><option value="DELIVERY">Delivery</option><option value="TAKEAWAY">Takeaway</option></select></div>
+            <div class="field report-filter item-filter"><label>Item / Deal</label><select id="itemId"><option value="">All</option>${itemOptions}</select></div>
+            <div class="field report-filter category-filter"><label>Category</label><select id="categoryFilter"><option value="">All</option>${catOptions}</select></div>
+            <div class="field report-filter cashier-filter"><label>Cashier</label><select id="cashierId"><option value="">All</option>${userOptions}</select></div>
+            <div class="field report-filter taker-filter"><label>Order Taker</label><select id="orderTakerId"><option value="">All</option>${takerOptions}</select></div>
+            <div class="field report-filter shift-filter"><label>Shift</label><select id="shiftId"><option value="">All</option>${shiftOptions}</select></div>
+            <label class="check report-filter discount-filter"><input type="checkbox" id="discountOnly"> Discounted only</label>
+            <label class="check report-filter refund-filter"><input type="checkbox" id="refundOnly"> Refunded only</label>
+          </div>
+          <div class="quick-fill-row"><button class="primary-btn" id="runReport">Run ${esc(currentReportTitle())}</button><button class="ghost-btn" id="todayReport" type="button">Today</button><button class="ghost-btn" id="lastMonthReport" type="button">Last 30 Days</button></div>
+          <div id="reportResult" class="mt"><div class="empty-cart compact-empty"><b>Report ready.</b><p>Select report and click Run.</p></div></div>
+        </div>
       </div>
-      <div class="quick-fill-row"><button class="primary-btn" id="runReport">Run Report</button><button class="ghost-btn" id="lastMonthReport" type="button">Last 30 Days</button></div>
-      <div id="reportResult" class="mt"><div class="empty-cart compact-empty"><b>Report ready.</b><p>Click Run Report or wait for auto-load.</p></div></div>
     </div>`;
+    applyReportFilterVisibility();
+    $$('[data-report-type]').forEach(b=>b.onclick=()=>{ reportType=b.dataset.reportType; renderReports(ws); });
     $('#runReport').onclick=loadReport;
+    $('#todayReport').onclick=()=>{ const d=new Date().toISOString().slice(0,10); $('#fromDate').value=d; $('#toDate').value=d; loadReport(); };
     $('#lastMonthReport').onclick=()=>{ const d=new Date(); const to=d.toISOString().slice(0,10); d.setDate(d.getDate()-30); $('#fromDate').value=d.toISOString().slice(0,10); $('#toDate').value=to; loadReport(); };
-    $('#exportReport').onclick=()=>downloadApi(`/api/export?${reportQuery()}`,`swifttill-report-${Date.now()}.csv`).catch(e=>toast(e.message,true));
+    $('#exportReport').onclick=()=>downloadApi(`/api/export?${reportQuery()}`,`swifttill-${reportType}-report-${Date.now()}.csv`).catch(e=>toast(e.message,true));
     $('#printReportBtn').onclick=()=>printReportArea();
-    $$('.report-tabs button').forEach(b=>b.onclick=()=>{$$('.report-tabs button').forEach(x=>x.classList.remove('active'));b.classList.add('active');const el=$(`#report-section-${b.dataset.reportTab}`); if(el) el.scrollIntoView({behavior:'smooth',block:'start'});});
     setTimeout(loadReport, 20);
   }catch(e){ ws.innerHTML=`<div class="card subcard error-state"><h3>Reports failed to render</h3><p>${esc(e.message)}</p><button class="primary-btn" onclick="renderAdminContent()">Reload Reports</button></div>`; }
 }
+function applyReportFilterVisibility(){
+  const visible={
+    daily:['date','payment','ordertype','cashier','taker'],
+    itemwise:['date','item','category','cashier','taker'],
+    category:['date','category','cashier'],
+    payment:['date','payment','cashier','shift'],
+    custom:['date','payment','ordertype','item','category','cashier','taker','shift','discount','refund'],
+    x:['shift','cashier'],
+    y:['date','payment','ordertype','cashier'],
+    z:['date','shift','cashier'],
+    discount:['date','cashier','taker','discount'],
+    voidrefund:['date','cashier','refund'],
+    ordertype:['date','ordertype','cashier','taker']
+  }[reportType]||['date'];
+  $$('.report-filter').forEach(el=>{ el.style.display = visible.some(v=>el.classList.contains(v+'-filter')) ? '' : 'none'; });
+  if(reportType==='discount' && $('#discountOnly')) $('#discountOnly').checked=true;
+  if(reportType==='voidrefund' && $('#refundOnly')) $('#refundOnly').checked=true;
+}
 function reportQuery(){
   const params = new URLSearchParams();
+  params.set('type', reportType);
   const map = {from:'fromDate',to:'toDate',paymentMode:'paymentMode',orderType:'orderType',itemId:'itemId',categoryId:'categoryFilter',cashierId:'cashierId',orderTakerId:'orderTakerId',shiftId:'shiftId'};
   for(const [k,id] of Object.entries(map)){ const el=$('#'+id); if(el && el.value) params.set(k,el.value); }
   if($('#discountOnly')?.checked) params.set('discountOnly','1');
   if($('#refundOnly')?.checked) params.set('refundOnly','1');
   return params.toString();
 }
+function reportHeaderHtml(r){
+  const filters = r.filters || {};
+  const range = `${filters.from||''} to ${filters.to||''}`;
+  return `<div class="receipt report-receipt wide-report"><h3>${esc(state.settings.businessName||'SwiftTill POS')}</h3><div class="c">${esc(state.settings.branchName||'')}</div><div class="c">${esc(state.settings.address||'')} ${state.settings.phone?'• '+esc(state.settings.phone):''}</div><div class="sep"></div><div class="r"><span>Report</span><span>${esc(currentReportTitle())}</span></div><div class="r"><span>Range</span><span>${esc(range)}</span></div><div class="r"><span>Printed</span><span>${new Date().toLocaleString()}</span></div><div class="sep"></div>`;
+}
+function reportSummaryCards(r){
+  return `<div class="report-grid">
+    <div class="card metric"><p>Orders</p><h3>${r.summary.orders}</h3></div>
+    <div class="card metric"><p>Gross</p><h3>${money(r.summary.gross)}</h3></div>
+    <div class="card metric"><p>Discount</p><h3>${money(r.summary.discounts)}</h3></div>
+    <div class="card metric"><p>Refund</p><h3>${money(r.summary.refunds)}</h3></div>
+    <div class="card metric"><p>Net</p><h3>${money(r.summary.net)}</h3></div>
+    <div class="card metric"><p>Avg Bill</p><h3>${money(r.summary.averageBill)}</h3></div>
+  </div>`;
+}
+function rowsHtml(rows, cols){ return `<div class="report-table-wrap"><table class="admin-table"><thead><tr>${cols.map(c=>`<th>${esc(c[0])}</th>`).join('')}</tr></thead><tbody>${rows.length?rows.map(row=>`<tr>${cols.map(c=>`<td>${esc(c[2]?c[2](row[c[1]],row):row[c[1]])}</td>`).join('')}</tr>`).join(''):`<tr><td colspan="${cols.length}">No data for selected filters.</td></tr>`}</tbody></table></div>`; }
+function reportBodyHtml(r){
+  if(reportType==='itemwise') return `<div class="card subcard"><h3>Item Wise Sales</h3>${rowsHtml(r.itemWise,[['Item','item'],['Category','category'],['Qty','qty'],['Sales','sales',v=>money(v)]])}</div>`;
+  if(reportType==='category') return `<div class="card subcard"><h3>Category Wise Sales</h3>${rowsHtml(Object.entries(r.categoryWise).map(([category,sales])=>({category,sales})),[['Category','category'],['Sales','sales',v=>money(v)]])}</div>`;
+  if(reportType==='payment') return `<div class="card subcard"><h3>Payment Mode Summary</h3>${rowsHtml(Object.entries(r.paymentWise).map(([method,amount])=>({method,amount})),[['Payment Mode','method'],['Amount','amount',v=>money(v)]])}</div>`;
+  if(reportType==='discount') return `<div class="card subcard"><h3>Discount Report</h3><p>Discounted Bills: <b>${r.discountWise.count}</b></p><p>Total Discount: <b>${money(r.discountWise.amount)}</b></p>${billDetailsTable(r.orders.filter(o=>Number(o.discount||0)>0))}</div>`;
+  if(reportType==='voidrefund') return `<div class="card subcard"><h3>Void / Refund Report</h3><p>Void Orders: <b>${r.voidOrders.length}</b></p><p>Refund Entries: <b>${r.refunds.length}</b></p><p>Refund Amount: <b>${money(r.summary.refunds)}</b></p>${rowsHtml(r.refunds||[],[['Bill','orderNumber'],['Date','createdAt',v=>v?new Date(v).toLocaleString():'' ],['Method','method'],['Amount','amount',v=>money(v)],['Reason','reason'],['By','by']])}</div>`;
+  if(reportType==='ordertype') return `<div class="card subcard"><h3>Order Type Summary</h3>${rowsHtml(Object.entries(r.orderTypeWise).map(([type,amount])=>({type:formatType(type),amount})),[['Order Type','type'],['Sales','amount',v=>money(v)]])}</div>${billDetailsTable(r.orders)}`;
+  if(reportType==='x'||reportType==='z') return `<div class="grid2"><div class="card subcard"><h3>${esc(currentReportTitle())}</h3><p>Active shift: <b>${state.activeShift ? '#'+state.activeShift.number+' open' : 'No active shift'}</b></p><p>Opening Cash: <b>${money(r.shiftSummary?.openingCash||0)}</b></p><p>Cash Sales: <b>${money(r.shiftSummary?.cashSales||0)}</b></p><p>Expected Cash: <b>${money(r.shiftSummary?.expectedCash||0)}</b></p></div><div class="card subcard"><h3>Payments</h3>${Object.entries(r.paymentWise).map(([k,v])=>`<p>${esc(k)}: <b>${money(v)}</b></p>`).join('')||'<p>No payments.</p>'}</div></div>${billDetailsTable(r.orders)}`;
+  return `${reportSummaryCards(r)}<div class="grid2 mt"><div class="card subcard"><h3>Payment Mode</h3>${Object.entries(r.paymentWise).map(([k,v])=>`<p>${esc(k)}: <b>${money(v)}</b></p>`).join('')||'<p>No payments.</p>'}</div><div class="card subcard"><h3>Order Type</h3>${Object.entries(r.orderTypeWise).map(([k,v])=>`<p>${formatType(k)}: <b>${money(v)}</b></p>`).join('')||'<p>No sales.</p>'}</div></div>${billDetailsTable(r.orders)}`;
+}
+function billDetailsTable(orders){ return `<div class="card subcard mt"><h3>Bill Details</h3>${rowsHtml(orders||[],[['Bill','number',v=>'#'+v],['Date','date',v=>v?new Date(v).toLocaleString():'' ],['Type','type',v=>formatType(v)],['Table','table'],['Customer','customer'],['Taker','orderTaker'],['Cashier','cashier'],['Discount','discount',v=>money(v)],['Total','total',v=>money(v)],['Payments','payments']])}</div>`; }
 async function loadReport(){
   const target=$('#reportResult');
   if(target) target.innerHTML='<div class="empty-cart"><b>Loading report...</b><p>Reading paid bills from Neon.</p></div>';
   try{
     const j=await api(`/api/reports?${reportQuery()}`,null,'GET'); const r=j.data;
     if(!$('#reportResult')) return;
-    $('#reportResult').innerHTML=`<div id="printReportArea" class="report-print-wrap">
-    <div class="report-brand"><div><h2>${esc(state.settings.businessName||'SwiftTill POS')}</h2><p>${esc(state.settings.address||'')} ${state.settings.phone?'• '+esc(state.settings.phone):''}</p></div><b>${esc(state.settings.reportTitle||'Sales Report')}</b></div>
-    <div class="report-grid" id="report-section-sales">
-      <div class="card metric"><p>Orders</p><h3>${r.summary.orders}</h3></div>
-      <div class="card metric"><p>Gross Sales</p><h3>${money(r.summary.gross)}</h3></div>
-      <div class="card metric"><p>Discounts</p><h3>${money(r.summary.discounts)}</h3></div>
-      <div class="card metric"><p>Refunds</p><h3>${money(r.summary.refunds)}</h3></div>
-      <div class="card metric"><p>Net Sales</p><h3>${money(r.summary.net)}</h3></div>
-      <div class="card metric"><p>Average Bill</p><h3>${money(r.summary.averageBill)}</h3></div>
-      <div class="card metric cash-metric"><p>Opening Cash</p><h3>${money(r.shiftSummary?.openingCash||0)}</h3><span>Not counted as sale</span></div>
-      <div class="card metric cash-metric"><p>Cash Sales</p><h3>${money(r.shiftSummary?.cashSales||0)}</h3><span>Sales only</span></div>
-      <div class="card metric cash-metric"><p>Expected Cash</p><h3>${money(r.shiftSummary?.expectedCash||0)}</h3><span>Opening + cash sales</span></div>
-    </div>
-    <div class="grid2 mt"><div class="card subcard" id="report-section-payment"><h3>Payment Mode</h3>${Object.entries(r.paymentWise).map(([k,v])=>`<p>${esc(k)}: <b>${money(v)}</b></p>`).join('')||'<p>No payments.</p>'}</div>
-    <div class="card subcard"><h3>Order Type</h3>${Object.entries(r.orderTypeWise).map(([k,v])=>`<p>${formatType(k)}: <b>${money(v)}</b></p>`).join('')||'<p>No sales.</p>'}</div></div>
-    <div class="grid2 mt"><div class="card subcard" id="report-section-categories"><h3>Category Wise</h3>${Object.entries(r.categoryWise).map(([k,v])=>`<p>${esc(k)}: <b>${money(v)}</b></p>`).join('')||'<p>No sales.</p>'}</div>
-    <div class="card subcard" id="report-section-discounts"><h3>Discounts</h3><p>Discounted bills: <b>${r.discountWise.count}</b></p><p>Discount amount: <b>${money(r.discountWise.amount)}</b></p></div></div>
-    <div class="grid2 mt"><div class="card subcard" id="report-section-voids"><h3>Void / Refund</h3><p>Void orders: <b>${r.voidOrders.length}</b></p><p>Refund entries: <b>${r.refunds.length}</b></p><p>Refund amount: <b>${money(r.summary.refunds)}</b></p></div><div class="card subcard" id="report-section-xz"><h3>X / Z Snapshot</h3><p>X Report: current filtered live snapshot.</p><p>Z Report: use Close Shift for official close.</p><p>Active shift: <b>${state.activeShift ? '#'+state.activeShift.number+' open' : 'No active shift'}</b></p></div></div>
-    <div class="card subcard mt" id="report-section-items"><h3>Item Wise</h3><div class="report-table-wrap"><table class="admin-table"><thead><tr><th>Item</th><th>Category</th><th>Qty</th><th>Sales</th></tr></thead><tbody>${r.itemWise.map(i=>`<tr><td>${esc(i.item)}</td><td>${esc(i.category||'')}</td><td>${i.qty}</td><td>${money(i.sales)}</td></tr>`).join('')||'<tr><td colspan="4">No sales.</td></tr>'}</tbody></table></div></div>
-    <div class="card subcard mt"><h3>Bill Details</h3><div class="report-table-wrap"><table class="admin-table"><thead><tr><th>Bill</th><th>Date</th><th>Type</th><th>Table</th><th>Customer</th><th>Order Taker</th><th>Cashier</th><th>Discount</th><th>Total</th><th>Payments</th></tr></thead><tbody>${r.orders.map(o=>`<tr><td>#${esc(o.number)}</td><td>${new Date(o.date).toLocaleString()}</td><td>${formatType(o.type)}</td><td>${esc(o.table)}</td><td>${esc(o.customer||o.mobile||'')}</td><td>${esc(o.orderTaker)}</td><td>${esc(o.cashier)}</td><td>${money(o.discount)}</td><td>${money(o.total)}</td><td>${esc(o.payments)}</td></tr>`).join('')||'<tr><td colspan="10">No bills.</td></tr>'}</tbody></table></div></div>
-    <p class="report-footer">${esc(state.settings.reportFooter||'Generated by SwiftTill POS')}</p></div>`;
+    $('#reportResult').innerHTML=`<div id="printReportArea" class="report-print-wrap">${reportHeaderHtml(r)}${reportBodyHtml(r)}<div class="sep"></div><div class="c">${esc(state.settings.reportFooter||'Generated by SwiftTill POS')}</div></div></div>`;
   }catch(e){ const target=$('#reportResult'); if(target) target.innerHTML=`<div class="empty-cart error-state"><b>Report failed</b><p>${esc(e.message)}</p></div>`; toast(e.message,true);}
 }
 function renderAdmin(ws){

@@ -1,8 +1,8 @@
 {
   "name": "swifttill-pos-monorepo",
-  "version": "20.0.0",
+  "version": "22.0.0",
   "private": true,
-  "description": "SwiftTill POS V20: admin reports visible, client cloud credentials hidden, fast soft busy UI and direct local thermal print agent default.",
+  "description": "SwiftTill POS V22: structured report submenus, report-specific filters, Excel export per report and bill-style printable reports.",
   "workspaces": [
     "apps/api",
     "apps/web",

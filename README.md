@@ -33,3 +33,8 @@ https://github.com/swifttill/SWIFT-TILL/raw/main/downloads/SwiftTill_Print_Agent
 ```
 
 Client gets only the print-agent ZIP. Do not share Render, Neon, Cloudflare, or R2 credentials with restaurant staff.
+
+
+## Phase 22 — Structured Reports
+
+Reports now use main report menus with dedicated report types: Daily, Item Wise, Category Wise, Payment Mode, Custom, X, Y, Z, Discount, Void/Refund and Order Type. Each report shows only relevant filters, exports a report-specific Excel-compatible CSV, and prints in a consistent bill-style report format.
