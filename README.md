@@ -1,3 +1,7 @@
+# SwiftTill POS V24 — 360 Operational Audit Fixes
+
+This package hardens the non-UI operational layer: auth/security, order lifecycle, reports, backup retention, media/history preservation, and cloud print queue.
+
 # SwiftTill POS — V20 Admin Reports, Client-Safe Settings, Speed & Direct Print
 
 Production hardening phase for real restaurant testing.

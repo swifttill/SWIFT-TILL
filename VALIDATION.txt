@@ -1,9 +1,15 @@
-SwiftTill POS V20 validation
+SwiftTill POS V24 validation
+============================
 API syntax: PASS
 Web JS syntax: PASS
+Auth syntax: PASS
 Print agent syntax: PASS
-R2/storage syntax: PASS
-Admin cloud credentials hidden: PASS
-Reports render fallback: PASS
-Direct print-agent default: PASS
+Auth smoke test: PASS
+360 non-UI audit: PASS
+Report blank-function audit: PASS
+Report totals audit: PASS
+Security leakage audit: PASS
+Cloud print queue audit: PASS
+Backup persistence audit: PASS
+Media/history preservation audit: PASS
 ZIP integrity: PASS

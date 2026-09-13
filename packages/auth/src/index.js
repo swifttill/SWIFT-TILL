@@ -19,8 +19,10 @@ function verifyToken(token) {
   const parts = token.split('.');
   if (parts.length !== 3) return null;
   const expected = crypto.createHmac('sha256', SESSION_SECRET).update(`${parts[0]}.${parts[1]}`).digest('base64').replace(/=/g, '').replace(/\+/g, '-').replace(/\//g, '_');
+  if (Buffer.byteLength(expected) !== Buffer.byteLength(parts[2])) return null;
   if (!crypto.timingSafeEqual(Buffer.from(expected), Buffer.from(parts[2]))) return null;
-  const payload = JSON.parse(Buffer.from(parts[1].replace(/-/g, '+').replace(/_/g, '/'), 'base64').toString('utf8'));
+  let payload;
+  try { payload = JSON.parse(Buffer.from(parts[1].replace(/-/g, '+').replace(/_/g, '/'), 'base64').toString('utf8')); } catch { return null; }
   if (payload.exp && Date.now() > payload.exp) return null;
   return payload;
 }

@@ -31,11 +31,10 @@ async function setRolePermissions(db, role, keys) {
 }
 
 async function upsertUser(db, { id, branchId, name, email, password, roleId, pin }) {
-  const user = await db.user.upsert({
-    where: { email },
-    update: { name, branchId, passwordHash: hashPassword(password), pinHash: pin ? hashPassword(pin) : null, active: true },
-    create: { id, branchId, name, email, passwordHash: hashPassword(password), pinHash: pin ? hashPassword(pin) : null, active: true }
-  });
+  const existing = await db.user.findUnique({ where: { email } });
+  const user = existing
+    ? await db.user.update({ where: { email }, data: { name, branchId, active: true } })
+    : await db.user.create({ data: { id, branchId, name, email, passwordHash: hashPassword(password), pinHash: pin ? hashPassword(pin) : null, active: true } });
   await db.userRole.upsert({
     where: { userId_roleId: { userId: user.id, roleId } },
     update: {},
@@ -72,9 +71,7 @@ async function main() {
   await setRolePermissions(db, manager, MANAGER_PERMS);
   await setRolePermissions(db, cashier, CASHIER_PERMS);
 
-  await upsertUser(db, { id: 'usr_admin', branchId: branch.id, name: 'Admin', email: 'admin@swifttill.local', password: 'admin123', roleId: admin.id, pin: '1234' });
-  await upsertUser(db, { id: 'usr_manager', branchId: branch.id, name: 'Manager', email: 'manager@swifttill.local', password: 'manager123', roleId: manager.id, pin: '2222' });
-  await upsertUser(db, { id: 'usr_cashier', branchId: branch.id, name: 'Cashier', email: 'cashier@swifttill.local', password: 'cashier123', roleId: cashier.id, pin: '1111' });
+  await upsertUser(db, { id: 'usr_admin', branchId: branch.id, name: process.env.ADMIN_SEED_NAME || 'Admin', email: process.env.ADMIN_SEED_EMAIL || 'admin@swifttill.local', password: process.env.ADMIN_SEED_PASSWORD || 'admin123', roleId: admin.id, pin: process.env.ADMIN_SEED_PIN || '1234' });
 
   // Production seed intentionally does not create menu categories, menu items, deals, tables or order takers.
   // Add all real business data from the Admin panel so Render + Neon + R2 tests are clean.
@@ -85,7 +82,7 @@ async function main() {
     create: { branchId: branch.id, width: '80mm', copies: 1, showLogo: true, headerText: '', footerText: '' }
   });
 
-  console.log('SwiftTill PostgreSQL seed complete. Bootstrap admin, roles, permissions and empty production setup are ready. Add real menu, tables, order takers and branding from Admin.');
+  console.log('SwiftTill PostgreSQL seed complete. Bootstrap admin, roles, permissions and empty production setup are ready. Existing user passwords are not reset by seed. Add real menu, tables, order takers and branding from Admin.');
 }
 
 main().catch(e => { console.error(e); process.exit(1); });

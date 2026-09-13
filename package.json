@@ -1,8 +1,8 @@
 {
   "name": "swifttill-pos-monorepo",
-  "version": "23.0.0",
+  "version": "24.0.0",
   "private": true,
-  "description": "SwiftTill POS V22: structured report submenus, report-specific filters, Excel export per report and bill-style printable reports.",
+  "description": "SwiftTill POS V24: 360 operational audit fixes for security, reports, print queue, backup persistence and POS business rules.",
   "workspaces": [
     "apps/api",
     "apps/web",

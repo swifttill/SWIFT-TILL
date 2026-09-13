@@ -1,40 +1,12 @@
 {
-  "name": "swifttill-pos-monorepo",
-  "version": "20.0.0",
+  "name": "swifttill-print-agent-client",
+  "version": "24.0.0",
   "private": true,
-  "description": "SwiftTill POS V20: admin reports visible, client cloud credentials hidden, fast soft busy UI and direct local thermal print agent default.",
-  "workspaces": [
-    "apps/api",
-    "apps/web",
-    "apps/print-agent",
-    "packages/*"
-  ],
+  "description": "SwiftTill POS client print agent: cloud print queue to Windows default thermal printer.",
   "scripts": {
-    "start": "node apps/api/server.js",
-    "dev": "node apps/api/server.js",
-    "check": "node --check apps/api/server.js && node --check packages/db/src/client.js && node --check packages/db/src/adapter.js && node --check packages/auth/src/index.js && node --check packages/storage/src/r2.js && node --check apps/print-agent/agent.js",
-    "check:web": "node -e \"new Function(require('fs').readFileSync('apps/web/public/assets/js/app.js','utf8')); console.log('web js ok')\"",
-    "seed:reset": "node scripts/reset-local-db.js",
-    "db:schema": "echo Prisma schema is in packages/db/prisma/schema.prisma",
-    "validate": "npm run check && npm run check:web && npm run auth:smoke",
-    "db:generate": "prisma generate --schema packages/db/prisma/schema.prisma",
-    "db:migrate": "prisma migrate deploy --schema packages/db/prisma/schema.prisma",
-    "db:push": "prisma db push --schema packages/db/prisma/schema.prisma",
-    "db:seed": "node packages/db/seed.js",
-    "auth:smoke": "node packages/auth/smoke-test.js"
+    "start": "node apps/print-agent/agent.js"
   },
   "engines": {
     "node": ">=18.0.0"
-  },
-  "dependencies": {
-    "bcryptjs": "^2.4.3",
-    "jsonwebtoken": "^9.0.2",
-    "zod": "^3.23.8",
-    "@prisma/client": "^5.22.0",
-    "dotenv": "^16.4.5",
-    "@aws-sdk/client-s3": "^3.637.0"
-  },
-  "devDependencies": {
-    "prisma": "^5.22.0"
   }
 }
