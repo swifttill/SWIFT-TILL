@@ -59,3 +59,14 @@ This phase performs a full non-design-breaking UI audit pass:
 - Fast soft busy indicator fixed and visible without locking the full screen unnecessarily.
 - No Render/Neon/Cloudflare credentials are exposed to restaurant clients.
 - Existing V24 operational audit/security/backup/history/print fixes are preserved.
+
+
+## Phase 26 — Formatting, Reports & Print Templates Audit
+
+This phase audits formatting beyond the POS screen and fixes report templates for two separate use cases:
+
+- On-screen admin reports: professional management view with readable totals.
+- PDF / A4 output: QuickBooks-style clean business report with summary tables, details, totals and signature lines.
+- Thermal printing: 80mm receipt-style report slip with no boxes, no wide tables, and no browser-style card layout.
+
+It also keeps reports admin-only, keeps Excel/CSV exports report-specific, and keeps V24/V25 security, backup, history, media cleanup and print-agent work.

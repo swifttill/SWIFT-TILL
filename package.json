@@ -1,8 +1,8 @@
 {
   "name": "swifttill-pos-monorepo",
-  "version": "25.0.0",
+  "version": "26.0.0",
   "private": true,
-  "description": "SwiftTill POS V24: 360 operational audit fixes for security, reports, print queue, backup persistence and POS business rules.",
+  "description": "SwiftTill POS V26: professional UI/report formatting templates, QuickBooks-style PDF reports, and thermal report slip printing.",
   "workspaces": [
     "apps/api",
     "apps/web",

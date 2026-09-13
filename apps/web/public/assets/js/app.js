@@ -706,3 +706,168 @@ async function runReport(){
     $('#exportReport')?.removeAttribute('disabled'); $('#printReportBtn')?.removeAttribute('disabled');
   }catch(e){ if(target) target.innerHTML=`<div class="empty-cart error-state"><b>Report failed</b><p>${esc(e.message)}</p></div>`; toast(e.message,true); }
 }
+
+
+/* ============================================================
+   SwiftTill V26 Formatting / Reports / Print Template Audit
+   - Screen reports stay rich/professional.
+   - PDF/A4 print uses QuickBooks-style clean tables, no rounded boxes.
+   - Thermal print uses 80mm receipt slip, no boxes, no wide tables.
+   ============================================================ */
+function reportMoney(v){ return money(Number(v || 0)); }
+function reportDateTime(v){ return v ? new Date(v).toLocaleString() : ''; }
+function reportRangeText(r){ return `${r?.range?.from || 'Start'} to ${r?.range?.to || 'Now'}`; }
+function reportStoreName(){ return state?.settings?.businessName || 'SwiftTill POS'; }
+function reportBranchLine(){
+  const s = state?.settings || {};
+  return [s.branchName, s.address, s.phone].filter(Boolean).join(' • ');
+}
+function reportTable(headers, rows, footer){
+  const body = (rows && rows.length) ? rows.map(row => `<tr>${row.map((v,i)=>`<td class="${typeof v==='number' || String(v).startsWith('Rs ') ? 'num' : ''}">${esc(v)}</td>`).join('')}</tr>`).join('') : `<tr><td colspan="${headers.length}" class="empty-td">No data for selected filters.</td></tr>`;
+  const foot = footer ? `<tfoot><tr>${footer.map(v=>`<th class="${typeof v==='number' || String(v).startsWith('Rs ') ? 'num' : ''}">${esc(v ?? '')}</th>`).join('')}</tr></tfoot>` : '';
+  return `<div class="qb-table-wrap"><table class="qb-table"><thead><tr>${headers.map(h=>`<th>${esc(h)}</th>`).join('')}</tr></thead><tbody>${body}</tbody>${foot}</table></div>`;
+}
+function reportScreenSummary(r){
+  const s = r.summary || {};
+  const cards = [
+    ['Gross Sales', reportMoney(s.gross)], ['Discounts', reportMoney(s.discounts)], ['Refunds', reportMoney(s.refunds)], ['Net Sales', reportMoney(s.net)],
+    ['Orders', s.orders || 0], ['Guests', s.guests || 0], ['Average Bill', reportMoney(s.averageBill)], ['Change Returned', reportMoney(s.changeReturned)]
+  ];
+  return `<div class="qb-screen-metrics">${cards.map(([k,v])=>`<div><span>${esc(k)}</span><b>${esc(v)}</b></div>`).join('')}</div>`;
+}
+function reportA4SummaryTable(r){
+  const s = r.summary || {}, sh = r.shiftSummary || {};
+  return `<div class="qb-two-col"><div>${reportTable(['Sales Summary','Amount'],[
+    ['Gross Sales',reportMoney(s.gross)],['Discounts',reportMoney(s.discounts)],['Refunds',reportMoney(s.refunds)],['Net Sales',reportMoney(s.net)],['Total Orders',s.orders||0],['Guests',s.guests||0],['Average Bill',reportMoney(s.averageBill)],['Change Returned',reportMoney(s.changeReturned)]
+  ])}</div><div>${reportTable(['Cash Drawer / Shift','Amount'],[
+    ['Shift',sh.shiftNumber?`#${sh.shiftNumber} ${sh.shiftStatus||''}`:'No active shift'],['Opening Cash',reportMoney(sh.openingCash)],['Cash Sales',reportMoney(sh.cashSales)],['Cash Refunds',reportMoney(sh.cashRefunds)],['Expected Cash',reportMoney(sh.expectedCash)],['Counted Cash',sh.countedCash==null?'Not entered':reportMoney(sh.countedCash)],['Difference',sh.difference==null?'Not closed':reportMoney(sh.difference)]
+  ])}</div></div>`;
+}
+function reportPaymentRows(r){ return (r.paymentDetails || []).map(p=>[p.method, p.count || 0, reportMoney(p.received), reportMoney(p.change), reportMoney(p.revenue)]); }
+function reportItemRows(r){ return (r.itemWise || []).map(i=>[i.item, i.category, i.qty || 0, reportMoney(i.gross), reportMoney(i.discountShare), reportMoney(i.net)]); }
+function reportCategoryRows(r){ return (r.categoryDetails || []).map(c=>[c.category, c.qty || 0, reportMoney(c.gross), reportMoney(c.net)]); }
+function reportOrderTypeRows(r){ return (r.orderTypeDetails || []).map(o=>[formatType(o.type), o.orders || 0, o.guests || 0, reportMoney(o.gross), reportMoney(o.discount), reportMoney(o.net), reportMoney((Number(o.net)||0)/Math.max(1,Number(o.orders)||0))]); }
+function reportBillRows(r){ return (r.orders || []).map(o=>[o.number, reportDateTime(o.date), formatType(o.type), o.table || '', o.guests || '', o.customer || '', o.cashier || '', reportMoney(o.subtotal), reportMoney(o.discount), reportMoney(o.deliveryFee), reportMoney(o.total), o.payments || '']); }
+function reportDiscountRows(r){ return (r.discountWise?.rows || []).map(o=>[o.number, reportDateTime(o.date), formatType(o.type), o.cashier || '', o.discountType || '', o.discountValue || '', reportMoney(o.discount), reportMoney(o.total)]); }
+function reportRefundRows(r){ return (r.refunds || []).map(x=>['Refund', x.orderNumber || '', reportDateTime(x.createdAt), x.method || '', reportMoney(x.amount), x.reason || '', x.by || '']).concat((r.voidOrders || []).map(o=>['Void', o.number || '', reportDateTime(o.voidedAt || o.createdAt), o.status || '', reportMoney((o.total || 0)), o.voidReason || '', o.cashierName || ''])); }
+function sumReport(rows, index){ return rows.reduce((s,r)=>s+(Number(String(r[index]).replace(/[^0-9.-]/g,''))||0),0); }
+function buildA4ReportHtml(r){
+  const title=currentReportTitle();
+  const s=r.summary||{};
+  let details='';
+  if(reportType==='itemwise'){
+    const rows=reportItemRows(r); details=reportTable(['Item','Category','Qty','Gross','Discount Share','Net Sales'], rows, ['TOTAL','',sumReport(rows,2),reportMoney(sumReport(rows,3)),reportMoney(sumReport(rows,4)),reportMoney(sumReport(rows,5))]);
+  } else if(reportType==='category'){
+    const rows=reportCategoryRows(r); details=reportTable(['Category','Qty','Gross Sales','Net Sales'], rows, ['TOTAL',sumReport(rows,1),reportMoney(sumReport(rows,2)),reportMoney(sumReport(rows,3))]);
+  } else if(reportType==='payment'){
+    const rows=reportPaymentRows(r); details=reportTable(['Payment Method','Transactions','Received','Change','Revenue'], rows, ['TOTAL',sumReport(rows,1),reportMoney(sumReport(rows,2)),reportMoney(sumReport(rows,3)),reportMoney(sumReport(rows,4))]) + reportTable(['Bill','Date','Type','Table','Guest','Customer','Cashier','Subtotal','Discount','Delivery','Total','Payments'], reportBillRows(r), ['TOTAL','','','','','','',reportMoney(sumRows(r.orders||[],'subtotal')),reportMoney(sumRows(r.orders||[],'discount')),reportMoney(sumRows(r.orders||[],'deliveryFee')),reportMoney(sumRows(r.orders||[],'total')),'']);
+  } else if(reportType==='discount'){
+    const rows=reportDiscountRows(r); details=reportTable(['Bill','Date','Type','Cashier','Discount Type','Value','Discount','Bill Total'], rows, ['TOTAL','','','','','',reportMoney(sumReport(rows,6)),reportMoney(sumReport(rows,7))]);
+  } else if(reportType==='voidrefund'){
+    const rows=reportRefundRows(r); details=reportTable(['Type','Bill','Date','Method / Status','Amount','Reason','By'], rows, ['TOTAL','','','',reportMoney(sumReport(rows,4)),'','']);
+  } else if(reportType==='ordertype'){
+    const rows=reportOrderTypeRows(r); details=reportTable(['Order Type','Orders','Guests','Gross','Discount','Net','Average Bill'], rows, ['TOTAL',sumReport(rows,1),sumReport(rows,2),reportMoney(sumReport(rows,3)),reportMoney(sumReport(rows,4)),reportMoney(sumReport(rows,5)),'']);
+  } else if(reportType==='x' || reportType==='y' || reportType==='z'){
+    const pay=reportPaymentRows(r); const cat=reportCategoryRows(r); details=reportTable(['Payment Method','Transactions','Received','Change','Revenue'], pay, ['TOTAL',sumReport(pay,1),reportMoney(sumReport(pay,2)),reportMoney(sumReport(pay,3)),reportMoney(sumReport(pay,4))]) + reportTable(['Category','Qty','Gross Sales','Net Sales'], cat, ['TOTAL',sumReport(cat,1),reportMoney(sumReport(cat,2)),reportMoney(sumReport(cat,3))]) + reportTable(['Bill','Date','Type','Table','Guest','Customer','Cashier','Subtotal','Discount','Delivery','Total','Payments'], reportBillRows(r), ['TOTAL','','','','','','',reportMoney(sumRows(r.orders||[],'subtotal')),reportMoney(sumRows(r.orders||[],'discount')),reportMoney(sumRows(r.orders||[],'deliveryFee')),reportMoney(sumRows(r.orders||[],'total')),'']);
+  } else {
+    const pay=reportPaymentRows(r); const cat=reportCategoryRows(r); details=reportTable(['Payment Method','Transactions','Received','Change','Revenue'], pay, ['TOTAL',sumReport(pay,1),reportMoney(sumReport(pay,2)),reportMoney(sumReport(pay,3)),reportMoney(sumReport(pay,4))]) + reportTable(['Order Type','Orders','Guests','Gross','Discount','Net','Average Bill'], reportOrderTypeRows(r)) + reportTable(['Bill','Date','Type','Table','Guest','Customer','Cashier','Subtotal','Discount','Delivery','Total','Payments'], reportBillRows(r), ['TOTAL','','','','','','',reportMoney(sumRows(r.orders||[],'subtotal')),reportMoney(sumRows(r.orders||[],'discount')),reportMoney(sumRows(r.orders||[],'deliveryFee')),reportMoney(sumRows(r.orders||[],'total')),'']);
+  }
+  return `<div class="report-a4 qb-a4"><div class="qb-head"><div><h1>${esc(reportStoreName())}</h1><p>${esc(reportBranchLine())}</p></div><div><b>${esc(title)}</b><span>Range: ${esc(reportRangeText(r))}</span><span>Printed: ${esc(new Date().toLocaleString())}</span><span>User: ${esc(state?.user?.name || '')}</span></div></div><div class="qb-title-row"><h2>${esc(title)}</h2><b>Net Sales ${esc(reportMoney(s.net))}</b></div>${reportA4SummaryTable(r)}<h3 class="qb-section-title">Report Details</h3>${details}<div class="qb-signatures"><span>Prepared By</span><span>Checked By</span><span>Manager Signature</span></div><p class="qb-footer">${esc(state?.settings?.reportFooter || 'Generated by SwiftTill POS')}</p></div>`;
+}
+function thermalLine(left,right=''){ return `<div class="tr-line"><span>${esc(left)}</span><b>${esc(right)}</b></div>`; }
+function thermalTableBlock(title, rows, columns=2){
+  const lines=(rows && rows.length?rows:[[ 'No data', '' ]]).slice(0,60).map(r=>{
+    if(columns===3) return `<div class="tr-grid3"><span>${esc(r[0]??'')}</span><span>${esc(r[1]??'')}</span><b>${esc(r[2]??'')}</b></div>`;
+    return thermalLine(r[0]??'', r.slice(1).join('  '));
+  }).join('');
+  return `<div class="tr-section"><div class="tr-title">${esc(title)}</div>${lines}</div>`;
+}
+function buildThermalReportHtml(r){
+  const s=r.summary||{}, sh=r.shiftSummary||{};
+  const title=currentReportTitle();
+  let body = `<div class="thermal-report"><div class="tr-center"><b>${esc(reportStoreName())}</b><br>${esc(state?.settings?.branchName||'')}<br>${esc(state?.settings?.phone||'')}</div><div class="tr-sep"></div>${thermalLine('REPORT',title)}${thermalLine('RANGE',reportRangeText(r))}${thermalLine('PRINTED',new Date().toLocaleString())}${thermalLine('USER',state?.user?.name||'')}<div class="tr-sep"></div><div class="tr-title">SUMMARY</div>${thermalLine('Gross Sales',reportMoney(s.gross))}${thermalLine('Discounts',reportMoney(s.discounts))}${thermalLine('Refunds',reportMoney(s.refunds))}${thermalLine('NET SALES',reportMoney(s.net))}${thermalLine('Orders',s.orders||0)}${thermalLine('Guests',s.guests||0)}${thermalLine('Average Bill',reportMoney(s.averageBill))}${thermalLine('Change Returned',reportMoney(s.changeReturned))}`;
+  if(['daily','custom','payment','x','y','z'].includes(reportType)) body += `<div class="tr-sep"></div><div class="tr-title">CASH DRAWER</div>${thermalLine('Shift',sh.shiftNumber?`#${sh.shiftNumber} ${sh.shiftStatus||''}`:'No active shift')}${thermalLine('Opening Cash',reportMoney(sh.openingCash))}${thermalLine('Cash Sales',reportMoney(sh.cashSales))}${thermalLine('Cash Refunds',reportMoney(sh.cashRefunds))}${thermalLine('Expected Cash',reportMoney(sh.expectedCash))}${thermalLine('Counted Cash',sh.countedCash==null?'Not entered':reportMoney(sh.countedCash))}${thermalLine('Difference',sh.difference==null?'Not closed':reportMoney(sh.difference))}`;
+  if(reportType==='itemwise') body += `<div class="tr-sep"></div>` + thermalTableBlock('ITEM WISE', (r.itemWise||[]).map(i=>[i.item, `x${i.qty}`, reportMoney(i.net)]), 3);
+  else if(reportType==='category') body += `<div class="tr-sep"></div>` + thermalTableBlock('CATEGORY WISE', (r.categoryDetails||[]).map(c=>[c.category, `x${c.qty}`, reportMoney(c.net)]), 3);
+  else if(reportType==='ordertype') body += `<div class="tr-sep"></div>` + thermalTableBlock('ORDER TYPE', (r.orderTypeDetails||[]).map(o=>[formatType(o.type), `${o.orders} bills`, reportMoney(o.net)]), 3);
+  else if(reportType==='discount') body += `<div class="tr-sep"></div>` + thermalTableBlock('DISCOUNTS', (r.discountWise?.rows||[]).map(o=>[`#${o.number}`, reportDateTime(o.date), reportMoney(o.discount)]), 3);
+  else if(reportType==='voidrefund') body += `<div class="tr-sep"></div>` + thermalTableBlock('VOID / REFUND', reportRefundRows(r).map(x=>[`${x[0]} #${x[1]}`, x[5], x[4]]), 3);
+  else body += `<div class="tr-sep"></div>` + thermalTableBlock('PAYMENTS', reportPaymentRows(r).map(p=>[p[0], `${p[1]} trx`, p[4]]), 3) + `<div class="tr-sep"></div>` + thermalTableBlock('CATEGORY SALES', (r.categoryDetails||[]).map(c=>[c.category, `x${c.qty}`, reportMoney(c.net)]), 3);
+  body += `<div class="tr-sep"></div><div class="tr-sign"><span>Prepared</span><span>Checked</span></div><div class="tr-center small">${esc(state?.settings?.reportFooter || 'Generated by SwiftTill POS')}</div></div>`;
+  return body;
+}
+function thermalReportText(r){
+  const tmp=document.createElement('div'); tmp.innerHTML=buildThermalReportHtml(r); return tmp.textContent.replace(/\n{3,}/g,'\n\n').trim();
+}
+function reportHeaderHtml(r){ return buildA4ReportHtml(r); }
+function reportBodyHtml(){ return ''; }
+function renderReports(ws){
+  try{
+    const defs = reportDateDefaults(reportType);
+    const paymentOptions=(state.paymentMethods||[]).filter(p=>p.active).map(p=>`<option value="${esc(p.name)}">${esc(p.name)}</option>`).join('');
+    const itemOptions=[...(state.items||[]).map(i=>`<option value="${esc(i.id)}">${esc(i.name)}</option>`),...(state.deals||[]).map(d=>`<option value="${esc(d.id)}">Deal: ${esc(d.name)}</option>`)].join('');
+    const catOptions=(state.categories||[]).filter(c=>c.id!=='cat_all').map(c=>`<option value="${esc(c.id)}">${esc(c.name)}</option>`).join('');
+    const userOptions=(state.users||[]).map(u=>`<option value="${esc(u.id)}">${esc(u.name)}</option>`).join('');
+    const takerOptions=(state.orderTakers||[]).map(t=>`<option value="${esc(t.id)}">${esc(t.name)}</option>`).join('');
+    const shiftOptions=(state.shifts||[]).map(s=>`<option value="${esc(s.id)}">#${s.number} ${s.status}</option>`).join('');
+    ws.innerHTML=`<div class="report-page admin-report-shell pro-report-screen qb-report-module">
+      <div class="module-title"><div><h3>Reports</h3><p class="muted-note">Screen reports are rich. PDF uses clean QuickBooks-style A4. Thermal print uses 80mm slip format.</p></div><div class="actions-mini"><button class="ghost-btn" id="exportReport" disabled>Export Excel</button><button class="ghost-btn" id="printReportPdfBtn" disabled>PDF / A4</button><button class="primary-btn" id="printReportThermalBtn" disabled>Thermal Print</button></div></div>
+      <div class="reports-layout">
+        <div class="report-menu card subcard">
+          <h4>Sales</h4>${reportMenuButton('daily','Daily Summary','Totals + payments')}${reportMenuButton('custom','Custom Detailed','Full bill details')}${reportMenuButton('ordertype','Order Type','Dine-in / takeaway / delivery')}
+          <h4>Menu</h4>${reportMenuButton('itemwise','Item Wise','Qty, gross, net')}${reportMenuButton('category','Category Wise','Category revenue')}
+          <h4>Cash & Payments</h4>${reportMenuButton('payment','Payment Mode','Received / change / revenue')}${reportMenuButton('discount','Discounts','Discounted bills')}${reportMenuButton('voidrefund','Void / Refund','Manager actions')}
+          <h4>Closeout</h4>${reportMenuButton('x','X Report','Live shift snapshot')}${reportMenuButton('y','Y Report','Period summary')}${reportMenuButton('z','Z Report','End-day closeout')}
+        </div>
+        <div class="report-work card subcard">
+          <div class="report-headline"><h3 id="reportTitle">${esc(currentReportTitle())}</h3><span>${esc(state.settings?.businessName||'SwiftTill POS')}</span></div>
+          <div class="report-filter-grid compact-filters" id="reportFilters">
+            <div class="field report-filter date-filter"><label>From</label><input type="date" id="fromDate" value="${defs.from}"></div>
+            <div class="field report-filter date-filter"><label>To</label><input type="date" id="toDate" value="${defs.to}"></div>
+            <div class="field report-filter payment-filter"><label>Payment Mode</label><select id="paymentMode"><option value="">All</option>${paymentOptions}</select></div>
+            <div class="field report-filter ordertype-filter"><label>Order Type</label><select id="orderType"><option value="">All</option><option value="DINE_IN">Dine In</option><option value="DELIVERY">Delivery</option><option value="TAKEAWAY">Takeaway</option></select></div>
+            <div class="field report-filter item-filter"><label>Item / Deal</label><select id="itemId"><option value="">All</option>${itemOptions}</select></div>
+            <div class="field report-filter category-filter"><label>Category</label><select id="categoryFilter"><option value="">All</option>${catOptions}</select></div>
+            <div class="field report-filter cashier-filter"><label>Cashier</label><select id="cashierId"><option value="">All</option>${userOptions}</select></div>
+            <div class="field report-filter taker-filter"><label>Order Taker</label><select id="orderTakerId"><option value="">All</option>${takerOptions}</select></div>
+            <div class="field report-filter shift-filter"><label>Shift</label><select id="shiftId"><option value="">All</option>${shiftOptions}</select></div>
+            <label class="check report-filter discount-filter"><input type="checkbox" id="discountOnly"> Discounted only</label>
+            <label class="check report-filter refund-filter"><input type="checkbox" id="refundOnly"> Refunded only</label>
+            <button class="primary-btn" id="runReport">Run Report</button>
+          </div>
+          <div id="reportResult" class="mt"><div class="empty-cart compact-empty"><b>Select a report.</b><p>Run report to show totals, QuickBooks-style PDF, thermal slip print and export.</p></div></div>
+        </div>
+      </div></div>`;
+    updateReportFilterVisibility();
+    $$('[data-report-type]').forEach(b=>b.onclick=()=>{ reportType=b.dataset.reportType; renderReports(ws); });
+    $('#runReport').onclick=runReport;
+    $('#printReportPdfBtn').onclick=()=>printReportHtml('a4');
+    $('#printReportThermalBtn').onclick=()=>printReportHtml('thermal');
+    $('#exportReport').onclick=()=>downloadApi(`/api/export?${reportQuery()}`,`swifttill-${reportType}-report-${Date.now()}.csv`).catch(e=>toast(e.message,true));
+  }catch(e){ ws.innerHTML=`<div class="card subcard error-state"><h3>Reports failed to render</h3><p>${esc(e.message)}</p><button class="primary-btn" onclick="renderAdminContent()">Reload Reports</button></div>`; }
+}
+async function printReportHtml(mode='thermal'){
+  const r = window.swiftLastReport;
+  if(!r) return toast('Run report first.', true);
+  const thermal = mode === 'thermal';
+  const html = thermal ? buildThermalReportHtml(r) : buildA4ReportHtml(r);
+  const area = ensurePrintArea();
+  area.className = `print-only ${thermal ? 'print-thermal' : 'print-a4'}`;
+  area.innerHTML = html;
+  if(thermal && state?.printAgent?.cloudQueueConfigured){
+    try{ const queued = await api('/api/print-jobs',{type:'report',html,text:thermalReportText(r)}); if(queued?.queued){ toast('Thermal report sent to cloud print queue'); return; } }
+    catch(e){ toast('Cloud report queue failed; browser print opened', true); }
+  }
+  setTimeout(()=>window.print(),100);
+}
+async function runReport(){
+  const target=$('#reportResult');
+  if(target) target.innerHTML='<div class="report-loading"><b>Generating report...</b><span>Reading paid bills, payments, items and shift totals from Neon.</span></div>';
+  $('#exportReport')?.setAttribute('disabled','disabled'); $('#printReportPdfBtn')?.setAttribute('disabled','disabled'); $('#printReportThermalBtn')?.setAttribute('disabled','disabled');
+  try{
+    const j=await api(`/api/reports?${reportQuery()}`,null,'GET'); const r=j.data; window.swiftLastReport = r;
+    if(!$('#reportResult')) return;
+    $('#reportResult').innerHTML=`<div class="qb-report-screen">${reportScreenSummary(r)}${buildA4ReportHtml(r)}</div>`;
+    $('#exportReport')?.removeAttribute('disabled'); $('#printReportPdfBtn')?.removeAttribute('disabled'); $('#printReportThermalBtn')?.removeAttribute('disabled');
+  }catch(e){ if(target) target.innerHTML=`<div class="empty-cart error-state"><b>Report failed</b><p>${esc(e.message)}</p></div>`; toast(e.message,true); }
+}

@@ -1,13 +1,15 @@
-SwiftTill POS V25 Validation
+SwiftTill POS V26 Formatting / Reports / Print Templates Audit
 
 API syntax: PASS
 Web JS syntax: PASS
-CSS polish appended: PASS
-Reports removed from POS rail: PASS
-Reports retained in Admin Panel: PASS
-Admin UI polish: PASS
-Image aspect safety: PASS
-Fast soft busy indicator: PASS
-Cloud credentials hidden: PASS
-V24 operational fixes preserved: PASS
+Auth smoke test: PASS
+Print agent syntax: PASS
 ZIP integrity: PASS
+
+Key fixes:
+- QuickBooks-style A4/PDF report layout
+- 80mm thermal report slip layout
+- No rounded metric boxes in print output
+- Report details tables with totals rows
+- Separate PDF/A4 and Thermal Print buttons
+- Admin-only reports preserved
