@@ -205,3 +205,10 @@ Restored browser/favicon/PWA icons from the original SwiftTill logo asset, with 
 ## Phase 36 — Original Logo Favicon Size Fix
 
 The favicon still uses the original SwiftTill logo mark. It is now cropped tighter and scaled up to fill the favicon canvas so it appears larger in browser tabs. No redesigned artwork was introduced. Cache-busting is updated to `v=36`.
+
+
+## Phase 37 — Mobile Add Items Stay On Menu
+
+Mobile cashier flow fixed: adding menu items or deals no longer opens the bill drawer automatically. The bill/cart drawer is manual-only through the mobile Bill/Open Bill/Pay controls so staff can add multiple items quickly without closing the drawer after every tap.
+
+Status flags: `mobileAddItemsStayOnMenu=true`, `mobileBillDrawerManualOnly=true`.

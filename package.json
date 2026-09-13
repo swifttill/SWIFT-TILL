@@ -1,6 +1,6 @@
 {
   "name": "swifttill-pos-monorepo",
-  "version": "36.0.0",
+  "version": "37.0.0",
   "private": true,
   "description": "SwiftTill POS V36: original logo favicon enlarged/max-fill visibility fix.",
   "workspaces": [

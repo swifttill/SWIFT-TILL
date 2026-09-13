@@ -1296,4 +1296,43 @@ async function renderOpsSafety(c){
   }catch(e){ $('#opsScenarioBox').innerHTML=`<div class="empty-cart error-state"><b>Safety matrix failed</b><p>${esc(e.message)}</p></div>`; }
 }
 
+
+/* ============================================================
+   SwiftTill V37 Mobile Add-Item Flow Fix
+   - mobile item/deal taps no longer force-open the bill drawer
+   - bill drawer opens only from Bill/Open Bill/Pay controls
+   - cashier can add many items quickly from menu during rush hours
+============================================================ */
+addItem = async function(itemId){
+  if(!requireNotRapidClick()) return;
+  const i=state.items.find(x=>x.id===itemId);
+  if(!i||i.soldOut) return;
+  if(numericPrice(i.price)<=0) return toast('Set item price in Admin before billing', true);
+  if(!(await ensureOrder())) return;
+  const line=currentOrder.lines.find(l=>l.kind==='ITEM'&&l.itemId===i.id&&(!l.modifiers||!l.modifiers.length)&&!l.note);
+  if(line) line.qty++;
+  else currentOrder.lines.push({lineId:uid(),kind:'ITEM',itemId:i.id,categoryId:i.categoryId,name:i.name,price:i.price,imageUrl:i.imageUrl,qty:1,note:'',modifiers:[]});
+  renderBill();
+  const fab=$('#mobileCartFab b'); if(fab) fab.textContent=mobileCartSummary();
+  const pay=$('#mobilePayBill'); if(pay) pay.textContent=currentOrder && hasOrderLines(currentOrder) ? 'Pay Now' : 'Open Bill';
+  if(!isMobileViewport()) setMobileBill(mobileBillOpen);
+  toast(line ? `${i.name} quantity updated` : `${i.name} added`);
+};
+addDeal = async function(dealId){
+  if(!requireNotRapidClick()) return;
+  const d=state.deals.find(x=>x.id===dealId);
+  if(!d) return;
+  if(numericPrice(d.price)<=0) return toast('Set deal price in Admin before billing', true);
+  if(!(await ensureOrder())) return;
+  const line=currentOrder.lines.find(l=>l.kind==='DEAL'&&l.dealId===d.id&&!l.note);
+  if(line) line.qty++;
+  else currentOrder.lines.push({lineId:uid(),kind:'DEAL',dealId:d.id,categoryId:'cat_deals',name:d.name,price:d.price,imageUrl:d.imageUrl,qty:1,note:'',modifiers:[],dealItems:d.items});
+  renderBill();
+  const fab=$('#mobileCartFab b'); if(fab) fab.textContent=mobileCartSummary();
+  const pay=$('#mobilePayBill'); if(pay) pay.textContent=currentOrder && hasOrderLines(currentOrder) ? 'Pay Now' : 'Open Bill';
+  if(!isMobileViewport()) setMobileBill(mobileBillOpen);
+  toast(line ? `${d.name} quantity updated` : `${d.name} added`);
+};
+
+
 boot();
