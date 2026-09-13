@@ -23,3 +23,13 @@ Production hardening phase for real restaurant testing.
 ## Client warning
 
 Render/Neon/R2 keys are never shown in Admin UI. They must stay only in Render environment variables.
+
+## Phase 21 — Client Print Agent Package
+
+After pushing to GitHub main, the restaurant counter PC can download the print-agent package from:
+
+```text
+https://github.com/swifttill/SWIFT-TILL/raw/main/downloads/SwiftTill_Print_Agent_Client_Package.zip
+```
+
+Client gets only the print-agent ZIP. Do not share Render, Neon, Cloudflare, or R2 credentials with restaurant staff.

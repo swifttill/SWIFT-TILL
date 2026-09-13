@@ -1,0 +1,10 @@
+{
+  "name": "@swifttill/print-agent",
+  "version": "5.0.0",
+  "private": true,
+  "main": "agent.js",
+  "scripts": {
+    "start": "node agent.js",
+    "check": "node --check agent.js"
+  }
+}
