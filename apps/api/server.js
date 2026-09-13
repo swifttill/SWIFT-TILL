@@ -1,9 +1,11 @@
+require('dotenv').config();
 const http = require('http');
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 const url = require('url');
 const { hasR2Config, makeMediaKey, publicUrlForKey, assertImage, uploadImageToR2 } = require('../../packages/storage/src/r2');
+const { databaseHealth, hasDatabaseUrl, getPrisma } = require('../../packages/db/src/client');
 
 const ROOT = path.resolve(__dirname, '../..');
 const PUBLIC_DIR = path.join(ROOT, 'apps', 'web', 'public');
@@ -12,6 +14,10 @@ const STORAGE_DIR = path.join(ROOT, 'storage', 'uploads');
 const DB_PATH = path.join(DATA_DIR, 'db.json');
 const PORT = Number(process.env.PORT || 5174);
 const TOKENS = new Map();
+const APP_VERSION = '12.0.0-production-cleanup';
+const CLOUD_STATE_KEY = process.env.SWIFTTILL_STATE_KEY || 'swift-till-main';
+let cloudStateCache = null;
+let cloudStateInitPromise = null;
 
 const PERMISSIONS = [
   'pos.view','pos.create','pos.edit','pos.hold','pos.pay','pos.void','pos.refund','pos.transfer_table','pos.payment_correction',
@@ -29,7 +35,7 @@ function sample(p) { return `/assets/img/sample/${p}`; }
 
 function seedDb() {
   return {
-    meta: { app: 'SwiftTill POS', version: '7.0.0-online-pos-operational-fixes', createdAt: now(), storage: 'local-json', deployment: 'online-cloud-github-render-neon-r2-print-agent-ready' },
+    meta: { app: 'SwiftTill POS', version: APP_VERSION, createdAt: now(), storage: shouldUseCloudState() ? 'postgresql-cloud-state' : 'local-json', deployment: 'render-neon-cloudflare-r2-production' },
     settings: {
       businessName: 'SwiftTill Demo Restaurant', legalName: 'SwiftTill Demo Restaurant', branchName: 'Main Branch', branchCode: 'MAIN', phone: '03XX-XXXXXXX', email: 'info@swifttill.local', website: '', address: 'Rawalpindi, Pakistan', city: 'Rawalpindi', country: 'Pakistan', currency: 'PKR', logoUrl: '/assets/img/swifttill-logo.png',
       taxEnabled: false, taxPercent: 0, serviceChargeEnabled: false, serviceChargePercent: 0, defaultDeliveryFee: 150,
@@ -77,13 +83,65 @@ function seedDb() {
     customers: [], orders: [], shifts: [], refunds: [], auditLogs: [], counters: { bill: 1000, z: 0 }
   };
 }
-function loadDb() { ensureDir(DATA_DIR); ensureDir(STORAGE_DIR); if (!fs.existsSync(DB_PATH)) saveDb(seedDb()); const db = JSON.parse(fs.readFileSync(DB_PATH, 'utf8')); migrateDb(db); return db; }
-function saveDb(db) { ensureDir(DATA_DIR); fs.writeFileSync(DB_PATH, JSON.stringify(db, null, 2)); }
+function shouldUseCloudState() { return hasDatabaseUrl() && (process.env.NODE_ENV === 'production' || process.env.SWIFTTILL_DATA_STORE === 'postgres'); }
+function productionMode() { return process.env.NODE_ENV === 'production'; }
+async function ensureCloudState() {
+  if (!shouldUseCloudState()) return null;
+  if (cloudStateCache) return cloudStateCache;
+  if (cloudStateInitPromise) return cloudStateInitPromise;
+  cloudStateInitPromise = (async () => {
+    const prisma = await getPrisma();
+    await prisma.$executeRawUnsafe('CREATE TABLE IF NOT EXISTS swifttill_app_state (key TEXT PRIMARY KEY, value JSONB NOT NULL, updated_at TIMESTAMPTZ NOT NULL DEFAULT now())');
+    const rows = await prisma.$queryRawUnsafe('SELECT value FROM swifttill_app_state WHERE key = $1 LIMIT 1', CLOUD_STATE_KEY);
+    let db = rows && rows[0] ? rows[0].value : null;
+    if (!db) {
+      db = seedDb();
+      migrateDb(db);
+      await prisma.$executeRawUnsafe('INSERT INTO swifttill_app_state (key, value, updated_at) VALUES ($1, $2::jsonb, NOW()) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()', CLOUD_STATE_KEY, JSON.stringify(db));
+    }
+    migrateDb(db);
+    cloudStateCache = db;
+    return db;
+  })();
+  return cloudStateInitPromise;
+}
+async function loadDb() {
+  if (shouldUseCloudState()) return ensureCloudState();
+  ensureDir(DATA_DIR);
+  ensureDir(STORAGE_DIR);
+  if (!fs.existsSync(DB_PATH)) saveDb(seedDb());
+  const db = JSON.parse(fs.readFileSync(DB_PATH, 'utf8'));
+  migrateDb(db);
+  return db;
+}
+function saveDb(db) {
+  if (shouldUseCloudState()) {
+    cloudStateCache = db;
+    getPrisma()
+      .then(prisma => prisma.$executeRawUnsafe('INSERT INTO swifttill_app_state (key, value, updated_at) VALUES ($1, $2::jsonb, NOW()) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()', CLOUD_STATE_KEY, JSON.stringify(db)))
+      .catch(err => console.error('Cloud state save failed:', err.message));
+    return;
+  }
+  ensureDir(DATA_DIR);
+  fs.writeFileSync(DB_PATH, JSON.stringify(db, null, 2));
+}
+async function runtimeHealth() {
+  const db = { configured: hasDatabaseUrl(), store: shouldUseCloudState() ? 'postgresql-cloud-state' : 'local-json', ok: false };
+  try { const h = await databaseHealth(); db.ok = !!h.ok; db.mode = h.mode; } catch (e) { db.error = e.message; }
+  return {
+    ok: db.ok && (!productionMode() || hasR2Config()),
+    service: 'SwiftTill POS',
+    version: APP_VERSION,
+    database: db,
+    r2: { configured: hasR2Config(), mode: hasR2Config() ? 'cloudflare-r2' : (productionMode() ? 'missing' : 'local-dev-fallback') },
+    production: productionMode()
+  };
+}
 function migrateDb(db) {
   const seed = seedDb();
   for (const k of ['settings','paymentMethods','orders','shifts','refunds','auditLogs','counters','customers']) if (db[k] === undefined) db[k] = seed[k];
   if (!Array.isArray(db.roles)) db.roles = seed.roles;
-  if (db.meta) db.meta.version = '7.0.0-online-pos-operational-fixes';
+  if (db.meta) { db.meta.version = APP_VERSION; db.meta.storage = shouldUseCloudState() ? 'postgresql-cloud-state' : 'local-json'; }
   for (const [k,v] of Object.entries(seed.settings)) if (db.settings[k] === undefined) db.settings[k] = v;
   for (const pm of seed.paymentMethods) if (!db.paymentMethods.find(x => x.id === pm.id)) db.paymentMethods.push(pm);
   if (Array.isArray(db.users)) db.users.forEach(u => { if (!Array.isArray(u.roleIds)) u.roleIds = u.role === 'ADMIN' ? ['role_admin'] : u.role === 'MANAGER' ? ['role_manager'] : ['role_cashier']; });
@@ -185,13 +243,15 @@ function upsertList(res, db, user, key, body, action) { let record = body; if (!
 function deleteListRecord(res, db, user, key, id, action) { const i = db[key].findIndex(x => x.id === id); if (i < 0) throw Object.assign(new Error('Record not found'), { status: 404 }); const record = db[key][i]; if (record.system) throw Object.assign(new Error('System record cannot be deleted'), { status: 409 }); db[key].splice(i, 1); audit(db, user, action, { id: record.id, name: record.name }); saveDb(db); return send(res, 200, { ok: true, deleted: record }); }
 
 async function handleApi(req, res, pathname, query) {
-  const db = loadDb();
   try {
+    if (pathname === '/api/health' && req.method === 'GET') return send(res, 200, await runtimeHealth());
+    if (pathname === '/api/env-check' && req.method === 'GET') return send(res, 200, { ok: true, environment: { nodeEnv: process.env.NODE_ENV || 'development', databaseUrl: hasDatabaseUrl() ? 'loaded' : 'missing', dataStore: shouldUseCloudState() ? 'postgresql-cloud-state' : 'local-json', r2: hasR2Config() ? 'configured' : 'missing', production: productionMode() }, note: 'Safe status only. No secrets are returned.' });
+    const db = await loadDb();
     if (pathname === '/api/login' && req.method === 'POST') { const body = await parseBody(req); const user = db.users.find(u => u.email.toLowerCase() === String(body.email || '').toLowerCase() && u.password === body.password && u.active); if (!user) return send(res, 401, { ok: false, error: 'Invalid login' }); const token = crypto.randomBytes(24).toString('hex'); TOKENS.set(token, { userId: user.id, createdAt: Date.now() }); audit(db, user, 'LOGIN', { email: user.email }); saveDb(db); return send(res, 200, { ok: true, token, user: publicUser(db, user) }); }
     const user = requireAuth(req, db);
     if (pathname === '/api/state') return send(res, 200, { ok: true, data: compactState(db, user) });
 
-    if (pathname === '/api/upload-image' && req.method === 'POST') { requirePerm(db, user, 'admin.menu'); const body = await parseBody(req); const match = String(body.dataUrl || '').match(/^data:(image\/[a-zA-Z0-9.+-]+);base64,(.+)$/); if (!match) throw Object.assign(new Error('Invalid image data'), { status: 422 }); const contentType = match[1]; const bytes = Buffer.from(match[2], 'base64'); assertImage({ contentType, bytes }); const ext = contentType.split('/')[1].replace('jpeg', 'jpg').replace('svg+xml', 'svg'); const folder = ['category','item','deal','logo','receipt'].includes(body.folder) ? body.folder : 'uploads'; const fallbackName = `${Date.now()}-${safeName(body.filename || 'image').replace(/\.[a-z0-9]+$/i, '')}.${ext}`; if (hasR2Config()) { const key = makeMediaKey({ tenant: 'swifttill', folder, filename: body.filename || fallbackName }); const uploaded = await uploadImageToR2({ key, body: bytes, contentType }); audit(db, user, 'R2_IMAGE_UPLOADED', { key: uploaded.key, url: uploaded.url, folder }); saveDb(db); return send(res, 200, { ok: true, storage: 'r2', url: uploaded.url || publicUrlForKey(uploaded.key), key: uploaded.key }); } ensureDir(path.join(PUBLIC_DIR, 'uploads')); fs.writeFileSync(path.join(PUBLIC_DIR, 'uploads', fallbackName), bytes); audit(db, user, 'LOCAL_IMAGE_UPLOADED', { file: fallbackName, folder, futureTarget: 'Cloudflare R2' }); saveDb(db); return send(res, 200, { ok: true, storage: 'local', url: `/uploads/${fallbackName}`, key: fallbackName }); }
+    if (pathname === '/api/upload-image' && req.method === 'POST') { requirePerm(db, user, 'admin.menu'); const body = await parseBody(req); const match = String(body.dataUrl || '').match(/^data:(image\/[a-zA-Z0-9.+-]+);base64,(.+)$/); if (!match) throw Object.assign(new Error('Invalid image data'), { status: 422 }); const contentType = match[1]; const bytes = Buffer.from(match[2], 'base64'); assertImage({ contentType, bytes }); const ext = contentType.split('/')[1].replace('jpeg', 'jpg').replace('svg+xml', 'svg'); const folder = ['category','item','deal','logo','receipt'].includes(body.folder) ? body.folder : 'uploads'; const fallbackName = `${Date.now()}-${safeName(body.filename || 'image').replace(/\.[a-z0-9]+$/i, '')}.${ext}`; if (hasR2Config()) { const key = makeMediaKey({ tenant: 'swifttill', folder, filename: body.filename || fallbackName }); const uploaded = await uploadImageToR2({ key, body: bytes, contentType }); audit(db, user, 'R2_IMAGE_UPLOADED', { key: uploaded.key, url: uploaded.url, folder }); saveDb(db); return send(res, 200, { ok: true, storage: 'r2', url: uploaded.url || publicUrlForKey(uploaded.key), key: uploaded.key }); } if (productionMode()) throw Object.assign(new Error('Cloudflare R2 is required for production uploads'), { status: 503 }); ensureDir(path.join(PUBLIC_DIR, 'uploads')); fs.writeFileSync(path.join(PUBLIC_DIR, 'uploads', fallbackName), bytes); audit(db, user, 'LOCAL_IMAGE_UPLOADED_DEV_ONLY', { file: fallbackName, folder }); saveDb(db); return send(res, 200, { ok: true, storage: 'local-dev', url: `/uploads/${fallbackName}`, key: fallbackName }); }
 
     if (pathname === '/api/shift/open' && req.method === 'POST') { requirePerm(db, user, 'pos.pay'); const body = await parseBody(req); if (activeShift(db)) throw Object.assign(new Error('A shift is already open'), { status: 409 }); const shift = { id: uid('shf'), number: db.shifts.length + 1, status: 'OPEN', cashierId: user.id, cashierName: user.name, openingCash: money(body.openingCash), openedAt: now() }; db.shifts.push(shift); audit(db, user, 'SHIFT_OPENED', shift); saveDb(db); return send(res, 200, { ok: true, shift }); }
     if (pathname === '/api/shift/close' && req.method === 'POST') { requirePerm(db, user, 'pos.pay'); const body = await parseBody(req); const shift = activeShift(db); if (!shift) throw Object.assign(new Error('No open shift'), { status: 409 }); const rd = reportData(db, { from: shift.openedAt.slice(0,10), to: now().slice(0,10), shiftId: shift.id }); const cashSales = rd.paymentWise.Cash || 0; shift.status = 'CLOSED'; shift.countedCash = money(body.countedCash); shift.expectedCash = money(Number(shift.openingCash) + cashSales); shift.difference = money(shift.countedCash - shift.expectedCash); shift.closedAt = now(); audit(db, user, 'SHIFT_CLOSED', shift); saveDb(db); return send(res, 200, { ok: true, shift }); }
@@ -263,4 +323,4 @@ async function handleApi(req, res, pathname, query) {
 }
 function staticServe(req, res, pathname) { let filePath = pathname === '/' ? path.join(PUBLIC_DIR, 'index.html') : path.join(PUBLIC_DIR, decodeURIComponent(pathname)); if (!filePath.startsWith(PUBLIC_DIR)) return sendText(res, 403, 'Forbidden'); if (!fs.existsSync(filePath) || fs.statSync(filePath).isDirectory()) filePath = path.join(PUBLIC_DIR, 'index.html'); const ext = path.extname(filePath).toLowerCase(); const types = { '.html':'text/html; charset=utf-8', '.css':'text/css; charset=utf-8', '.js':'application/javascript; charset=utf-8', '.png':'image/png', '.jpg':'image/jpeg', '.jpeg':'image/jpeg', '.svg':'image/svg+xml', '.ico':'image/x-icon', '.webmanifest':'application/manifest+json' }; res.writeHead(200, { 'Content-Type': types[ext] || 'application/octet-stream' }); fs.createReadStream(filePath).pipe(res); }
 const server = http.createServer(async (req, res) => { const parsed = url.parse(req.url, true); if (parsed.pathname.startsWith('/api/')) return handleApi(req, res, parsed.pathname, parsed.query); staticServe(req, res, parsed.pathname); });
-server.listen(PORT, () => { ensureDir(path.join(PUBLIC_DIR, 'uploads')); ensureDir(STORAGE_DIR); loadDb(); console.log(`SwiftTill POS running: http://localhost:${PORT}`); console.log('Login: admin@swifttill.local / admin123'); });
+server.listen(PORT, async () => { ensureDir(path.join(PUBLIC_DIR, 'uploads')); ensureDir(STORAGE_DIR); try { await loadDb(); } catch (e) { console.error('Startup data store check failed:', e.message); if (productionMode()) process.exitCode = 1; } console.log(`SwiftTill POS running: http://localhost:${PORT}`); console.log(`Runtime env: DATABASE_URL=${hasDatabaseUrl() ? 'loaded' : 'missing'}, DATA_STORE=${shouldUseCloudState() ? 'postgresql-cloud-state' : 'local-json'}, R2=${hasR2Config() ? 'configured' : 'missing'}`); console.log('Login: admin@swifttill.local / admin123'); });

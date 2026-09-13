@@ -151,3 +151,45 @@ No `node_modules`, no build cache, no test database, no `.env` secrets.
 - Local upload fallback retained for development when R2 env is missing.
 - Seed script loads `.env` directly.
 - R2 variables are documented for Render deployment.
+
+
+## Phase 11 — Runtime Deployment Hardening
+
+- API now loads `.env` automatically.
+- Added `/api/health` and `/api/env-check`.
+- Startup console confirms DATABASE_URL and R2 mode.
+- PostgreSQL seed now creates full demo setup: organization, branch, users, roles, permissions, menu, modifiers, deals, tables, order takers and receipt settings.
+
+Run:
+
+```powershell
+npm run db:generate
+npm run db:push
+npm run db:seed
+npm start
+```
+
+Check:
+
+```text
+http://localhost:5174/api/health
+http://localhost:5174/api/env-check
+```
+
+## Phase 12 — Production Cleanup
+
+This package adds production cleanup for Render deployment:
+
+- `/api/health` public status endpoint.
+- `/api/env-check` public safe environment status endpoint.
+- Production image uploads require Cloudflare R2.
+- Local upload fallback is development-only.
+- Render production data store uses Neon-backed `swifttill_app_state` cloud state.
+- Startup logs clearly show `DATABASE_URL`, data-store mode, and R2 configuration status.
+
+Live checks after deploy:
+
+```text
+https://swift-till.onrender.com/api/health
+https://swift-till.onrender.com/api/env-check
+```
