@@ -1,0 +1,17 @@
+SwiftTill POS Monorepo V7 Validation
+
+Node API syntax: PASS
+Frontend JavaScript syntax: PASS
+Server boot test: PASS
+Login API: PASS
+Dine In without table blocked: PASS
+Dine In with table accepted: PASS
+Busy table duplicate blocked: PASS
+Order save with lines: PASS
+Cash overpayment/change handling: PASS
+Reports API: PASS
+Opening cash kept separate from sales: PASS
+Service worker/offline cache disabled: PASS
+ZIP clean policy: PASS
+
+Package excludes node_modules, build cache and test database.

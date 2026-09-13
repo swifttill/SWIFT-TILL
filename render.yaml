@@ -1,0 +1,12 @@
+services:
+  - type: web
+    name: swifttill-pos
+    env: node
+    plan: free
+    buildCommand: npm install
+    startCommand: npm start
+    envVars:
+      - key: APP_ENV
+        value: production
+      - key: PORT
+        value: 10000

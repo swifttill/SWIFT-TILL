@@ -1,0 +1,13 @@
+{
+  "name": "SwiftTill POS",
+  "short_name": "SwiftTill",
+  "description": "Cloud-ready food POS with billing, reports, admin and receipt workflow.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#f5f8ff",
+  "theme_color": "#076bff",
+  "icons": [
+    { "src": "/assets/img/swifttill-logo.png", "sizes": "512x512", "type": "image/png", "purpose": "any" }
+  ]
+}

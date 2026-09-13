@@ -1,0 +1,18 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>SwiftTill POS</title>
+  <meta name="description" content="SwiftTill POS online food billing system with responsive POS, admin, reports and thermal receipt workflow." />
+  <meta name="theme-color" content="#076bff" />
+  <link rel="manifest" href="/manifest.webmanifest" />
+  <link rel="stylesheet" href="/assets/css/styles.css" />
+</head>
+<body>
+  <div id="app"></div>
+  <div id="toast" aria-live="polite"></div>
+  <script src="/assets/js/app.js"></script>
+  <script>if ('serviceWorker' in navigator) navigator.serviceWorker.getRegistrations().then(r=>r.forEach(x=>x.unregister())).catch(()=>{}); if (window.caches) caches.keys().then(k=>k.forEach(x=>caches.delete(x))).catch(()=>{});</script>
+</body>
+</html>

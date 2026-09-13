@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="500" height="360" viewBox="0 0 500 360">
+  <defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#ffeef2"/><stop offset="1" stop-color="#fff"/></linearGradient></defs>
+  <rect width="500" height="360" rx="34" fill="url(#g)"/>
+  <circle cx="92" cy="285" r="72" fill="#e11d48" opacity="0.08"/>
+  <circle cx="396" cy="64" r="58" fill="#e11d48" opacity="0.10"/>
+  <text x="250" y="196" font-size="92" text-anchor="middle" dominant-baseline="middle" font-family="Arial, sans-serif">%</text>
+  <text x="250" y="265" font-size="28" text-anchor="middle" font-weight="800" fill="#e11d48" font-family="Arial, sans-serif">Deal</text>
+</svg>

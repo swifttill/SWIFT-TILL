@@ -1,0 +1,21 @@
+{
+  "name": "swifttill-pos-monorepo",
+  "version": "7.0.0",
+  "private": true,
+  "description": "SwiftTill POS V7 online-cloud focused monorepo with table-required dine-in flow, live table timers, full-card menu/deal adding, payment calculators, reports fixes, clean customer admin, receipt/report formats, print agent and deployment-ready structure.",
+  "workspaces": [
+    "apps/api",
+    "apps/web",
+    "packages/*"
+  ],
+  "scripts": {
+    "start": "node apps/api/server.js",
+    "dev": "node apps/api/server.js",
+    "check": "node --check apps/api/server.js",
+    "check:web": "node -e \"new Function(require('fs').readFileSync('apps/web/public/assets/js/app.js','utf8')); console.log('web js ok')\"",
+    "seed:reset": "node scripts/reset-local-db.js"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
