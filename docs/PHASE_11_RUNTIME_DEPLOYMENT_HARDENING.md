@@ -49,7 +49,7 @@ http://localhost:5174
 ```text
 SwiftTill POS running: http://localhost:5174
 Runtime env: DATABASE_URL=loaded, R2=configured/local fallback
-Login: admin@swifttill.local / admin123
+Login: use owner-issued admin credentials; change bootstrap password before client use
 ```
 
 ## Important

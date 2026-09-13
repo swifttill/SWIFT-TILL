@@ -1,3 +1,27 @@
+# SwiftTill POS V31 — Final 360 Non-Testing Audit Fixes
+
+This package applies a deep non-UI operational audit pass after V30. It keeps the modern POS/admin/report/branding work and hardens the remaining backend, history, security, print, backup and workflow rules before live QA.
+
+## V31 fixes
+
+- Table double-booking guard strengthened for draft-to-open and draft-to-pay race cases.
+- Paid bill void is blocked; paid bills must use refund.
+- Refund overrun is blocked; refunds cannot exceed remaining refundable balance.
+- Payment correction and paid-order reopen are blocked after refund to preserve clean audit history.
+- Shift close requires counted cash and subtracts cash refunds from expected cash.
+- Technical cloud/backup permissions removed from restaurant-facing role catalog.
+- Raw backup create/download/restore moved to owner-maintenance-only access.
+- Cloud-state migrations/cleanup persist back to Neon immediately.
+- Production startup fails hard if Neon/cloud state cannot load.
+- Added `/api/audit/final-360` safe readiness endpoint.
+
+## Current verdict
+
+Controlled restaurant pilot is possible after V31 deploy and real QA. Final handover still requires real thermal-printer testing and a full dummy-order day simulation.
+
+
+---
+
 # SwiftTill POS V24 — 360 Operational Audit Fixes
 
 This package hardens the non-UI operational layer: auth/security, order lifecycle, reports, backup retention, media/history preservation, and cloud print queue.

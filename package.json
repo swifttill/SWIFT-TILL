@@ -1,8 +1,8 @@
 {
   "name": "swifttill-pos-monorepo",
-  "version": "30.0.0",
+  "version": "31.0.0",
   "private": true,
-  "description": "SwiftTill POS V30: media image frame fix, admin category filters/sorting, login/favicon/header/bill/report branding polish.",
+  "description": "SwiftTill POS V31: final 360 non-testing audit fixes, operational guard hardening, refund/void/shift/table protections and audit report.",
   "workspaces": [
     "apps/api",
     "apps/web",

@@ -1,8 +1,8 @@
-SwiftTill POS V30 validation
-API syntax: PASS
-Web JS syntax: PASS
-Auth smoke test: PASS
-Storage/R2 syntax: PASS
-Print agent syntax: PASS
-Favicon assets: PASS
-ZIP integrity: PASS
+SwiftTill POS V31 validation
+API syntax PASS
+Web JS syntax PASS
+Print agent syntax PASS
+DB seed syntax PASS
+Shared constants syntax PASS
+ZIP integrity PASS
+Note: live Render/thermal-printer testing is still required outside this code audit.
