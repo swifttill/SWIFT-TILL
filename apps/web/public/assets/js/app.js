@@ -10,6 +10,7 @@ let categoryId = 'all';
 let currentOrder = null;
 let adminTab = 'dashboard';
 let reportType = 'daily';
+let mobileBillOpen = false;
 let selectedOrderType = 'DINE_IN';
 let lastReceipt = null;
 let busyCount = 0;
@@ -36,6 +37,19 @@ function numericPrice(v){ return Math.round((Number(v)||0)*100)/100; }
 function hasPositiveTotal(o=currentOrder){ return calcTotals(o).total > 0; }
 function requirePositiveTotal(message='Order total must be greater than Rs 0. Set item/deal price in Admin first.'){ if(!hasPositiveTotal()){ toast(message, true); return false; } return true; }
 function requireNotRapidClick(){ const n=Date.now(); if(n-lastActionAt<350) return false; lastActionAt=n; return true; }
+
+function isMobileViewport(){ return window.matchMedia('(max-width: 760px)').matches; }
+function setMobileBill(open){
+  mobileBillOpen = !!open;
+  document.body.classList.toggle('mobile-bill-open', mobileBillOpen);
+  const shell = document.querySelector('.app-shell');
+  if(shell) shell.classList.toggle('cart-open', mobileBillOpen);
+}
+function mobileCartSummary(){
+  const lines = currentOrder?.lines?.reduce((s,l)=>s+Number(l.qty||0),0) || 0;
+  const total = currentOrder ? calcTotals(currentOrder).total : 0;
+  return `${lines} item${lines===1?'':'s'} • ${money(total)}`;
+}
 
 function categoryTone(name=''){
   const n = String(name || '').toLowerCase();
@@ -120,12 +134,14 @@ function renderSetup(c){
 
 function renderShell(){
   if(screen === 'admin') return renderAdminShell();
-  app.innerHTML = `<div class="app-shell">
+  app.innerHTML = `<div class="app-shell ${mobileBillOpen?'cart-open':''}">
     <aside class="panel sidebar">${renderSidebar()}</aside>
     <main class="main">${setupBanner()}<section class="panel topbar">${renderTopbar()}</section><section class="panel workspace" id="workspace"></section></main>
     <aside class="right-rail"><div class="panel rail-nav">${renderRailNav()}</div><section class="panel bill" id="billPanel"></section></aside>
+    <button class="mobile-cart-fab" id="mobileCartFab" type="button"><span>🧾 Bill</span><b>${mobileCartSummary()}</b></button>
   </div><div id="modalRoot"></div>`;
   bindSidebar(); bindRailNav(); renderWorkspace(); renderBill();
+  $('#mobileCartFab') && ($('#mobileCartFab').onclick = () => setMobileBill(true));
 }
 function renderAdminShell(){
   app.innerHTML = `<div class="admin-screen">${setupBanner()}<section class="panel topbar admin-topbar">${renderTopbar()}</section><section class="panel admin-page" id="workspace"></section></div><div id="modalRoot"></div>`;
@@ -172,10 +188,10 @@ function renderTopbar(){
 function bindSidebar(){
   $('#newOrderBtn').onclick = () => openNewOrderModal();
   $$('#workspace [data-mode]').forEach(b=>b.onclick=()=>{});
-  $$('[data-cat]').forEach(b => b.onclick = () => { screen='pos'; centerMode='menu'; categoryId=b.dataset.cat; renderShell(); });
+  $$('[data-cat]').forEach(b => b.onclick = () => { setMobileBill(false); screen='pos'; centerMode='menu'; categoryId=b.dataset.cat; renderShell(); });
   $('#dealsBtn').onclick = () => { screen='pos'; centerMode='deals'; renderShell(); };
   $('#comboBtn').onclick = () => { screen='pos'; centerMode='deals'; renderShell(); };
-  $('#showAll').onclick = () => { categoryId='all'; centerMode='menu'; screen='pos'; renderShell(); };
+  $('#showAll').onclick = () => { setMobileBill(false); categoryId='all'; centerMode='menu'; screen='pos'; renderShell(); };
   $('#menuSearch').oninput = e => { screen='pos'; centerMode='menu'; renderMenu(e.target.value); };
   $('#logoutBtn').onclick = logout;
   $('#shiftBtn').onclick = () => state.activeShift ? openCloseShift() : openOpenShift();
@@ -183,11 +199,11 @@ function bindSidebar(){
 function bindRailNav(){
   $$('[data-rail]').forEach(b => b.onclick = () => {
     const r = b.dataset.rail;
-    if(r==='open'){ screen='pos'; centerMode='open'; renderShell(); }
+    if(r==='open'){ setMobileBill(false); screen='pos'; centerMode='open'; renderShell(); }
     if(r==='admin'){
       const ok = can('admin.menu') || can('admin.users') || can('admin.settings') || can('admin.roles') || can('admin.payments') || can('reports.view');
       if(!ok) return toast('Admin permission required', true);
-      screen='admin'; adminTab = can('reports.view') && !(can('admin.menu') || can('admin.settings')) ? 'reports' : adminTab; renderShell();
+      setMobileBill(false); screen='admin'; adminTab = can('reports.view') && !(can('admin.menu') || can('admin.settings')) ? 'reports' : adminTab; renderShell();
     }
   });
 }
@@ -236,16 +252,17 @@ function renderOpenOrders(){
 }
 function calcTotals(o){ const subtotal=(o?.lines||[]).reduce((s,l)=>s+((Number(l.price)||0)+(l.modifiers||[]).reduce((a,m)=>a+Number(m.price||0),0))*Number(l.qty||0),0); const deliveryFee=Number(o?.deliveryFee||0); let discount=0; if(o?.discountType==='PERCENT') discount=subtotal*Math.max(0,Math.min(100,Number(o.discountValue||0)))/100; if(o?.discountType==='FIXED') discount=Number(o.discountValue||0); discount=Math.min(Math.max(discount,0),subtotal+deliveryFee); return {subtotal,deliveryFee,discount,total:Math.max(0,subtotal+deliveryFee-discount)}; }
 async function ensureOrder(){ if(currentOrder) return true; openNewOrderModal(); return false; }
-async function addItem(itemId){ if(!requireNotRapidClick()) return; const i=state.items.find(x=>x.id===itemId); if(!i||i.soldOut) return; if(numericPrice(i.price)<=0) return toast('Set item price in Admin before billing', true); if(!(await ensureOrder())) return; const line=currentOrder.lines.find(l=>l.kind==='ITEM'&&l.itemId===i.id&&(!l.modifiers||!l.modifiers.length)&&!l.note); if(line) line.qty++; else currentOrder.lines.push({lineId:uid(),kind:'ITEM',itemId:i.id,categoryId:i.categoryId,name:i.name,price:i.price,imageUrl:i.imageUrl,qty:1,note:'',modifiers:[]}); renderBill(); }
-async function addDeal(dealId){ if(!requireNotRapidClick()) return; const d=state.deals.find(x=>x.id===dealId); if(!d) return; if(numericPrice(d.price)<=0) return toast('Set deal price in Admin before billing', true); if(!(await ensureOrder())) return; const line=currentOrder.lines.find(l=>l.kind==='DEAL'&&l.dealId===d.id&&!l.note); if(line) line.qty++; else currentOrder.lines.push({lineId:uid(),kind:'DEAL',dealId:d.id,categoryId:'cat_deals',name:d.name,price:d.price,imageUrl:d.imageUrl,qty:1,note:'',modifiers:[],dealItems:d.items}); renderBill(); }
+async function addItem(itemId){ if(!requireNotRapidClick()) return; const i=state.items.find(x=>x.id===itemId); if(!i||i.soldOut) return; if(numericPrice(i.price)<=0) return toast('Set item price in Admin before billing', true); if(!(await ensureOrder())) return; const line=currentOrder.lines.find(l=>l.kind==='ITEM'&&l.itemId===i.id&&(!l.modifiers||!l.modifiers.length)&&!l.note); if(line) line.qty++; else currentOrder.lines.push({lineId:uid(),kind:'ITEM',itemId:i.id,categoryId:i.categoryId,name:i.name,price:i.price,imageUrl:i.imageUrl,qty:1,note:'',modifiers:[]}); renderBill(); if(isMobileViewport()) setMobileBill(true); }
+async function addDeal(dealId){ if(!requireNotRapidClick()) return; const d=state.deals.find(x=>x.id===dealId); if(!d) return; if(numericPrice(d.price)<=0) return toast('Set deal price in Admin before billing', true); if(!(await ensureOrder())) return; const line=currentOrder.lines.find(l=>l.kind==='DEAL'&&l.dealId===d.id&&!l.note); if(line) line.qty++; else currentOrder.lines.push({lineId:uid(),kind:'DEAL',dealId:d.id,categoryId:'cat_deals',name:d.name,price:d.price,imageUrl:d.imageUrl,qty:1,note:'',modifiers:[],dealItems:d.items}); renderBill(); if(isMobileViewport()) setMobileBill(true); }
 function renderBill(){
   const bp=$('#billPanel'); if(!bp) return;
-  if(!currentOrder){ bp.innerHTML=`<div class="bill-head"><h2>Current Order</h2><b>—</b></div><div class="empty-cart"><div><b>No active bill</b><p>Press New Order to start billing.</p></div></div>`; return; }
+  if(!currentOrder){ bp.innerHTML=`<div class="bill-head"><h2>Current Order</h2><b>—</b><button class="mobile-close-cart" id="mobileCloseCart" type="button">×</button></div><div class="empty-cart"><div><b>No active bill</b><p>Press New Order to start billing.</p></div></div>`; return; }
   const t=calcTotals(currentOrder);
   const printBillButton = `<button class="secondary-btn mini-action" id="printBillBtn" ${hasOrderLines(currentOrder)?'':'disabled title="Add item first"'}>Print Bill</button>`;
   const billActions = currentOrder.type==='DINE_IN' ? `${printBillButton}<button class="secondary-btn mini-action" id="moveTableBtn">Move Table</button><button class="secondary-btn mini-action" id="splitBillBtn">Split Bill</button>` : `${printBillButton}<button class="secondary-btn mini-action" id="splitBillBtn">Split Bill</button>`;
   const deliveryRow = currentOrder.type==='DELIVERY' ? `<div class="total-row"><span>Delivery Fee</span><b>${money(t.deliveryFee)}</b></div>` : '';
-  bp.innerHTML=`<div class="bill-head"><h2>Current Order</h2><b>#${esc(currentOrder.number||'Draft')}</b></div><div class="orderbox">${orderBoxRows(currentOrder)}</div><div class="line-list">${currentOrder.lines.length?currentOrder.lines.map(cartLine).join(''):'<div class="empty-cart">Add items from the center menu.</div>'}</div><div class="totals compact-totals"><div class="total-row"><span>Subtotal</span><b>${money(t.subtotal)}</b></div><div class="discount-row"><span>Discount</span><div class="switch"><button class="${currentOrder.discountType==='FIXED'?'active':''}" data-disc="FIXED">Rs</button><button class="${currentOrder.discountType==='PERCENT'?'active':''}" data-disc="PERCENT">%</button></div><input class="small-input" id="discountVal" value="${Number(currentOrder.discountValue||0)}"></div>${deliveryRow}<div class="total-row big"><span>Total</span><b>${money(t.total)}</b></div></div><div class="bill-quick-actions">${billActions}</div><label class="check"><input type="checkbox" id="printRemember" ${getPrintDefault()?'checked':''}> Print receipt after payment</label><div class="actions"><button class="hold" id="holdBtn" ${hasOrderLines(currentOrder)?'':'disabled title="Add item first"'}>Ⅱ HOLD</button><button class="pay" id="payBtn" ${hasOrderLines(currentOrder)?'':'disabled title="Add item first"'}>▣ PAY ${money(t.total)}</button></div>`;
+  bp.innerHTML=`<div class="bill-head"><h2>Current Order</h2><b>#${esc(currentOrder.number||'Draft')}</b><button class="mobile-close-cart" id="mobileCloseCart" type="button">×</button></div><div class="orderbox">${orderBoxRows(currentOrder)}</div><div class="line-list">${currentOrder.lines.length?currentOrder.lines.map(cartLine).join(''):'<div class="empty-cart">Add items from the center menu.</div>'}</div><div class="totals compact-totals"><div class="total-row"><span>Subtotal</span><b>${money(t.subtotal)}</b></div><div class="discount-row"><span>Discount</span><div class="switch"><button class="${currentOrder.discountType==='FIXED'?'active':''}" data-disc="FIXED">Rs</button><button class="${currentOrder.discountType==='PERCENT'?'active':''}" data-disc="PERCENT">%</button></div><input class="small-input" id="discountVal" value="${Number(currentOrder.discountValue||0)}"></div>${deliveryRow}<div class="total-row big"><span>Total</span><b>${money(t.total)}</b></div></div><div class="bill-quick-actions">${billActions}</div><label class="check"><input type="checkbox" id="printRemember" ${getPrintDefault()?'checked':''}> Print receipt after payment</label><div class="actions"><button class="hold" id="holdBtn" ${hasOrderLines(currentOrder)?'':'disabled title="Add item first"'}>Ⅱ HOLD</button><button class="pay" id="payBtn" ${hasOrderLines(currentOrder)?'':'disabled title="Add item first"'}>▣ PAY ${money(t.total)}</button></div>`;
+  $('#mobileCloseCart') && ($('#mobileCloseCart').onclick = () => setMobileBill(false));
   $$('[data-line-minus]').forEach(b=>b.onclick=()=>changeQty(b.dataset.lineMinus,-1));
   $$('[data-line-plus]').forEach(b=>b.onclick=()=>changeQty(b.dataset.linePlus,1));
   $$('[data-line-remove]').forEach(b=>b.onclick=()=>{currentOrder.lines=currentOrder.lines.filter(l=>l.lineId!==b.dataset.lineRemove);renderBill();});
@@ -520,7 +537,7 @@ async function loadReport(){
   }catch(e){ const target=$('#reportResult'); if(target) target.innerHTML=`<div class="empty-cart error-state"><b>Report failed</b><p>${esc(e.message)}</p></div>`; toast(e.message,true);}
 }
 function renderAdmin(ws){
-  const tabs=['dashboard','setup','reports','paid','categories','items','deals','tables','takers','payments','users','roles','settings','backup'];
+  const tabs=['dashboard','setup','reports','paid','categories','items','deals','tables','takers','payments','users','roles','settings'];
   ws.innerHTML=`<div class="admin-layout"><div class="panel admin-nav"><div class="admin-nav-title"><b>Admin Panel</b><span>Back office</span></div>${tabs.map(t=>`<button class="${adminTab===t?'active':''}" data-admin-tab="${t}"><span class="admin-nav-icon">${tabIcon(t)}</span><span>${labelTab(t)}</span></button>`).join('')}</div><div class="panel admin-content" id="adminContent"></div></div>`;
   $$('[data-admin-tab]').forEach(b=>b.onclick=()=>{adminTab=b.dataset.adminTab;renderAdmin(ws);});
   renderAdminContent();
@@ -581,7 +598,7 @@ function renderSettings(c){
   const s=state.settings;
   c.innerHTML=`<div class="module-title"><div><h3>Company, Branding, Receipt & Printer</h3><p class="muted-note">Manage restaurant profile, branch, receipt layout, report header and local print-agent settings.</p></div></div><form id="settingsForm" class="settings-layout">
     <div class="card subcard"><h3>Organization / Company</h3>${input('businessName','Display Business Name',s.businessName)}${input('legalName','Legal / Organization Name',s.legalName||s.businessName)}${input('branchName','Branch Name',s.branchName)}${input('branchCode','Branch Code',s.branchCode||'MAIN')}${input('phone','Phone / Contact',s.phone)}${input('email','Email',s.email||'')}${input('website','Website',s.website||'')}${input('city','City',s.city||'')}${input('country','Country',s.country||'Pakistan')}<div class="field"><label>Complete Address</label><textarea name="address" rows="3">${esc(s.address||'')}</textarea></div></div>
-    <div class="card subcard"><h3>Branding</h3>${imageField(s.logoUrl)}<p class="muted-note">Logo is used on admin, receipt preview and future cloud/customer reports.</p>${input('currency','Currency',s.currency||'PKR')}</div>
+    <div class="card subcard"><h3>Branding</h3>${imageField(s.logoUrl)}<p class="muted-note">Logo is used on admin, receipt preview and future cloud/customer reports.</p>${input('currency','Currency',s.currency||'PKR')}${input('taxRegistrationNo','Tax / NTN / STRN No.',s.taxRegistrationNo||'')}${input('invoicePrefix','Invoice Prefix',s.invoicePrefix||'ST')}${input('legalInvoiceFooter','Legal Invoice Footer',s.legalInvoiceFooter||'')}</div>
     <div class="card subcard"><h3>Receipt Format</h3>${select('receiptWidth','Thermal Paper Width',s.receiptWidth||'80mm',[['80mm','80mm'],['58mm','58mm']])}${input('receiptCopies','Receipt Copies',s.receiptCopies||1,'number')}${input('receiptHeader','Receipt Header',s.receiptHeader)}${input('receiptFooter','Receipt Footer',s.receiptFooter)}<label class="check mb"><input type="checkbox" name="showLogoOnReceipt" ${s.showLogoOnReceipt?'checked':''}> Show logo on receipt</label><label class="check mb"><input type="checkbox" name="showCustomerOnReceipt" ${s.showCustomerOnReceipt?'checked':''}> Show customer details</label><label class="check mb"><input type="checkbox" name="showOrderTakerOnReceipt" ${s.showOrderTakerOnReceipt?'checked':''}> Show order taker</label><label class="check mb"><input type="checkbox" name="showCashierOnReceipt" ${s.showCashierOnReceipt?'checked':''}> Show cashier</label><label class="check mb"><input type="checkbox" name="showPaymentBreakdown" ${s.showPaymentBreakdown?'checked':''}> Show payment breakdown</label><button type="button" class="ghost-btn" id="receiptPreviewBtn">Preview Receipt</button><button type="button" class="ghost-btn" id="testPrintAgentBtn">Test Print Agent</button><button type="button" class="ghost-btn" id="changePasswordBtn">Change Password</button></div>
     <div class="card subcard"><h3>Printer / Report</h3>${input('printerName','Printer Name',s.printerName||'Windows Default Printer')}${input('localAgentUrl','Local Print Agent URL',s.localAgentUrl||'http://127.0.0.1:9721/print')}${input('defaultDeliveryFee','Default Delivery Fee',s.defaultDeliveryFee,'number')}<div class="field"><label>Manager PIN</label><input name="managerPin" type="password" value="" placeholder="Leave blank to keep current PIN"></div>${input('reportTitle','Report Title',s.reportTitle||'Sales Report')}${input('reportFooter','Report Footer',s.reportFooter||'Generated by SwiftTill POS')}<label class="check mb"><input type="checkbox" name="autoPrintReceipt" ${s.autoPrintReceipt?'checked':''}> Auto print receipt</label><label class="check mb"><input type="checkbox" name="rememberPrintChoice" ${s.rememberPrintChoice?'checked':''}> Remember print choice</label><label class="check mb"><input type="checkbox" name="reportShowBranding" ${s.reportShowBranding?'checked':''}> Show branding on reports</label></div>
     <div class="settings-save"><button class="primary-btn">Save Company & Format Settings</button></div>
@@ -943,6 +960,7 @@ function renderBill(){
     <div class="bill-quick-actions one-line-actions">${printBillButton}${moveButton}${splitButton}</div>
     <label class="check print-check compact-check"><input type="checkbox" id="printRemember" ${getPrintDefault()?'checked':''}> Print receipt after payment</label>
     <div class="actions compact-main-actions"><button class="hold" id="holdBtn" ${hasLines?'':'disabled title="Add item first"'}>Ⅱ HOLD</button><button class="pay" id="payBtn" ${hasLines?'':'disabled title="Add item first"'}>▣ PAY ${money(t.total)}</button></div>`;
+  $('#mobileCloseCart') && ($('#mobileCloseCart').onclick = () => setMobileBill(false));
   $$('[data-line-minus]').forEach(b=>b.onclick=()=>changeQty(b.dataset.lineMinus,-1));
   $$('[data-line-plus]').forEach(b=>b.onclick=()=>changeQty(b.dataset.linePlus,1));
   $$('[data-line-remove]').forEach(b=>b.onclick=()=>{currentOrder.lines=currentOrder.lines.filter(l=>l.lineId!==b.dataset.lineRemove);renderBill();});
@@ -1014,6 +1032,7 @@ renderBill = function(){
     <div class="bill-quick-actions one-line-actions v29-actions">${printBillButton}${moveButton}${splitButton}</div>
     <label class="check print-check compact-check v29-print-check"><input type="checkbox" id="printRemember" ${getPrintDefault()?'checked':''}> Print after pay</label>
     <div class="actions compact-main-actions v29-main-actions"><button class="hold" id="holdBtn" ${hasLines?'':'disabled title="Add item first"'}>Ⅱ HOLD</button><button class="pay" id="payBtn" ${hasLines?'':'disabled title="Add item first"'}>▣ PAY ${money(t.total)}</button></div>`;
+  $('#mobileCloseCart') && ($('#mobileCloseCart').onclick = () => setMobileBill(false));
   $$('[data-line-minus]').forEach(b=>b.onclick=()=>changeQty(b.dataset.lineMinus,-1));
   $$('[data-line-plus]').forEach(b=>b.onclick=()=>changeQty(b.dataset.linePlus,1));
   $$('[data-line-remove]').forEach(b=>b.onclick=()=>{currentOrder.lines=currentOrder.lines.filter(l=>l.lineId!==b.dataset.lineRemove);renderBill();});

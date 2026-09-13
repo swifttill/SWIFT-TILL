@@ -1,8 +1,8 @@
-SwiftTill POS V31 validation
+SwiftTill POS V32 validation
 API syntax PASS
 Web JS syntax PASS
+Auth smoke test PASS
+Storage/R2 syntax PASS
 Print agent syntax PASS
-DB seed syntax PASS
-Shared constants syntax PASS
+Mobile CSS audit PASS
 ZIP integrity PASS
-Note: live Render/thermal-printer testing is still required outside this code audit.

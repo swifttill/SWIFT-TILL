@@ -149,3 +149,19 @@ Version: 30.0.0-media-admin-filters-branding
 - Added admin search, category filter and sorting to lists, especially Menu Items.
 - Added SwiftTill favicon/browser tab icon and PWA icons.
 - Added branded login background, company logo in header and SwiftTill footer branding for bills/reports.
+
+
+## Phase 32 — Mobile Friendly + Final Noted Code-Side Cleanup
+
+This package adds a phone/tablet POS usability pass and closes the code-side notes that do not require real hardware testing:
+
+- mobile cart drawer with bottom bill button
+- compact phone/tablet POS workspace
+- horizontal mobile category rail
+- mobile-safe admin navigation
+- mobile report/admin tables scroll safely
+- client admin backup controls remain hidden
+- tax / NTN / STRN / invoice footer fields added to company settings
+- final audit/status flags updated for mobile pilot readiness
+
+Remaining items after this phase are field-testing items only: real thermal printer test, dummy order day simulation, and final customer UI approval.
