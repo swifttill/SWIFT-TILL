@@ -1,3 +1,20 @@
+# SwiftTill POS V39 — Discount, Cash and Button Visibility Guards
+
+This phase fixes discount switching, over-discount prevention, cash/payment calculation guards and hidden button text on compact screens.
+
+## V39 fixes
+
+- Rs/% discount switch now resets value to avoid carrying old Rs values into percentage mode.
+- Rs fixed discount cannot exceed the current bill amount.
+- Percent discount cannot exceed 100%.
+- Frontend and backend both sanitize discount before save, autosync and payment.
+- Total payable cannot go negative.
+- Cash overpayment remains change, not revenue.
+- Card/online overpayment remains blocked.
+- Button text visibility improved on mobile and desktop.
+
+---
+
 # SwiftTill POS V38 — Live Cross-Device Sync
 
 This phase improves real-time operational sync between mobile and PC counters. Paying, holding, saving, editing and opening bills on one device now refreshes the other device automatically.

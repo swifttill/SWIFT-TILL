@@ -821,3 +821,59 @@ body{
   .app-shell{display:grid!important;grid-template-columns:1fr!important;grid-template-areas:'topbar' 'setup' 'strip' 'side' 'work'!important;gap:7px!important;padding:7px 7px 76px!important;height:auto!important;min-height:100dvh!important;overflow:visible!important}.main{display:contents!important}.setup-banner{grid-area:setup!important}.topbar{grid-area:topbar!important}.workspace{grid-area:work!important;min-height:calc(100dvh - 245px)!important}.sidebar{grid-area:side!important;position:sticky!important;top:72px!important;z-index:18!important;padding:7px!important;background:rgba(255,255,255,.96)!important;border-radius:15px!important}.mobile-pos-strip{grid-area:strip!important;display:grid!important;grid-template-columns:1fr 1.2fr 1fr;gap:6px!important;padding:6px!important;border-radius:15px!important;background:#fff!important}.mobile-pos-strip button{min-height:34px;border-radius:11px;background:#eef5ff;color:#123463;font-weight:950;font-size:11px;border:1px solid #dbe7f7}.mobile-pos-strip button b{display:inline-grid;place-items:center;min-width:19px;height:19px;border-radius:99px;background:#076bff;color:white;font-size:10px;margin-left:3px}.sidebar-scroll{display:flex!important;gap:7px!important;overflow-x:auto!important;overflow-y:hidden!important;padding:2px 0 4px!important;min-height:auto!important;scroll-snap-type:x proximity!important}.cat-btn{min-width:92px!important;min-height:38px!important}.cat-btn span{max-width:120px}.new-order{display:block!important;height:38px!important;margin:0 0 7px!important}.search{display:block!important;margin:0 0 7px!important}.center-scroll{overflow:visible!important}.right-rail{position:fixed!important;inset:0 0 0 auto!important;width:min(410px,96vw)!important;z-index:90!important;transform:translateX(105%)!important;transition:transform .18s ease!important}.app-shell.cart-open .right-rail{transform:translateX(0)!important}.app-shell.cart-open:before{content:"";position:fixed;inset:0;background:rgba(8,20,48,.42);z-index:80}.bill-head{display:grid!important;grid-template-columns:1fr auto auto!important;gap:8px!important;align-items:center!important}.mobile-close-cart{display:grid!important;place-items:center!important;width:30px!important;height:30px!important;border-radius:10px!important;background:#10213f!important;color:white!important;font-size:18px!important;font-weight:950!important}.mobile-cart-fab{z-index:70!important}.admin-screen{padding:7px!important}.admin-layout{display:block!important}.v34-admin-nav{display:block!important;white-space:normal!important;max-height:none!important;overflow:visible!important}.admin-nav-slot{display:inline-grid!important;vertical-align:top;margin:0 6px 6px 0}.admin-nav-slot>button{min-width:112px!important}.admin-report-subnav{display:none!important;position:relative;margin:4px 0 0!important;padding:6px!important;border-left:0!important;border-radius:12px;background:#eef5ff}.admin-nav-slot.active-slot .admin-report-subnav{display:flex!important;max-width:calc(100vw - 32px);overflow-x:auto;gap:6px}.report-nav-group{display:flex!important;gap:5px;align-items:center}.report-nav-group small{display:none}.report-nav-group button{white-space:nowrap;min-width:95px!important;justify-content:center!important}.v34-report-work{min-height:420px!important}.report-filter-grid{grid-template-columns:1fr 1fr!important}.brand-report-name{align-items:flex-start}.screen-logo{width:34px!important;height:34px!important}.ops-list{grid-template-columns:1fr}.ops-status p{font-size:12px}.qb-brand-block{display:block}.a4-logo{display:block;margin:0 auto 6px}.thermal-logo{width:22mm;max-height:14mm}
 }
 @media (max-width:420px){.mobile-pos-strip{grid-template-columns:1fr 1fr!important}.mobile-pos-strip button:last-child{grid-column:1/-1}.workspace{min-height:calc(100dvh - 300px)!important}.item-grid{grid-template-columns:repeat(2,minmax(0,1fr))!important;gap:7px!important}.item-card{min-height:158px!important}.item-card .item-img{height:78px!important}.top-items{grid-template-columns:1fr 1fr!important}.top-pill{font-size:8.5px!important}.topbar-company-logo{width:34px!important;height:34px!important}.hello h2{font-size:13px!important}.hello p{font-size:9px!important}.sidebar{top:64px!important}.right-rail{width:100vw!important}.report-filter-grid{grid-template-columns:1fr!important}}
+
+/* ============================================================
+   SwiftTill V39 — Button visibility + discount safety UI
+   - no hidden writing on mobile/desktop buttons
+   - compact buttons still keep readable labels
+   - discount controls show limits and errors clearly
+============================================================ */
+.primary-btn,.secondary-btn,.danger-btn,.ghost-btn,.hold,.pay,.mini-action,.seg button,.switch button,.pill,.cat-btn,.rail-nav button,.admin-nav button,.report-menu button,.mobile-pos-strip button{
+  min-width:0!important;
+  white-space:nowrap!important;
+  overflow:visible!important;
+  text-overflow:clip!important;
+  line-height:1.12!important;
+}
+.btn-ico,.admin-nav-icon,.rail-ico{flex:0 0 auto!important;line-height:1!important}
+.bill-quick-actions .mini-action{
+  padding:6px 7px!important;
+  font-size:clamp(10px,.72vw,12px)!important;
+  letter-spacing:-.01em!important;
+  gap:4px!important;
+}
+.actions .hold,.actions .pay{
+  font-size:clamp(11px,.82vw,14px)!important;
+  padding:8px 10px!important;
+  gap:5px!important;
+  letter-spacing:-.01em!important;
+}
+.compact-discount{grid-template-columns:minmax(58px,1fr) auto minmax(58px,76px)!important;gap:6px!important;align-items:center!important}
+.compact-discount .switch button{min-width:34px!important;padding:6px 8px!important;font-size:12px!important}
+.compact-discount .small-input{height:30px!important;padding:6px 8px!important;font-size:12px!important}
+.discount-helper{
+  grid-column:1/-1;
+  margin-top:-2px;
+  font-size:10px;
+  font-weight:800;
+  color:#657795;
+  line-height:1.25;
+}
+.discount-helper.warn{color:#bf5b00}.discount-helper.ok{color:#0a7a43}
+.pay-rule-note{font-size:11px!important;color:#52657f!important;font-weight:750!important;line-height:1.35!important;margin-top:8px!important}
+.pay-total-card b{white-space:nowrap!important}
+.quick-fill-row .ghost-btn{font-size:11px!important;padding:7px 8px!important;min-height:32px!important}
+@media (max-width:760px){
+  .primary-btn,.secondary-btn,.danger-btn,.ghost-btn,.hold,.pay,.mini-action,.seg button,.switch button{font-size:clamp(10px,3vw,12px)!important}
+  .bill-quick-actions{grid-template-columns:repeat(3,minmax(0,1fr))!important;gap:4px!important}
+  .bill-quick-actions .mini-action{height:28px!important;min-height:28px!important;padding:4px 3px!important;font-size:10px!important;border-radius:9px!important}
+  .actions .hold,.actions .pay{height:39px!important;min-height:39px!important;font-size:11px!important;padding:6px 7px!important;border-radius:12px!important}
+  .compact-discount{grid-template-columns:minmax(54px,.9fr) auto minmax(54px,66px)!important;gap:4px!important}
+  .compact-discount .switch button{height:26px!important;min-width:30px!important;padding:4px 6px!important;font-size:11px!important}
+  .compact-discount .small-input{height:27px!important;font-size:11px!important;padding:4px 6px!important}
+  .discount-helper{font-size:9px!important}
+  .pay-total-card{padding:10px 12px!important}.pay-total-card b{font-size:22px!important}
+  .modal .seg button{min-height:36px!important;font-size:11px!important}
+  .grid3{grid-template-columns:1fr!important}
+  .quick-fill-row{display:grid!important;grid-template-columns:1fr!important;gap:6px!important}
+}

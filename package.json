@@ -1,8 +1,8 @@
 {
   "name": "swifttill-pos-monorepo",
-  "version": "38.0.0",
+  "version": "39.0.0",
   "private": true,
-  "description": "SwiftTill POS V38: live cross-device sync for mobile and PC order state.",
+  "description": "SwiftTill POS V39: discount/cash calculation guards and button text visibility fixes.",
   "workspaces": [
     "apps/api",
     "apps/web",

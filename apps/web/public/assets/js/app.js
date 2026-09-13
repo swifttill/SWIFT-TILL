@@ -1492,4 +1492,110 @@ renderShell = function(){
 };
 
 
+/* ============================================================
+   SwiftTill V39 Discount + Cash Calculation Guards
+   - switching Rs/% resets value so old Rs amount cannot remain as %
+   - fixed discount cannot exceed current bill amount
+   - percent discount cannot exceed 100%
+   - payment uses freshly sanitized totals
+   - button text stays visible on compact screens
+============================================================ */
+function discountBaseClient(order){
+  const subtotal=(order?.lines||[]).reduce((sum,line)=>sum+((Number(line.price)||0)+(line.modifiers||[]).reduce((a,m)=>a+Number(m.price||0),0))*Number(line.qty||0),0);
+  return Math.max(0, Math.round((subtotal + Number(order?.deliveryFee||0))*100)/100);
+}
+function sanitizeDiscountClient(order, showToast=false){
+  if(!order) return {changed:false, base:0, max:0};
+  const base = discountBaseClient(order);
+  let type = ['FIXED','PERCENT','NONE'].includes(order.discountType) ? order.discountType : 'NONE';
+  let val = Math.max(0, Number(order.discountValue||0));
+  let changed = false;
+  if(type === 'NONE' || val <= 0 || base <= 0){
+    if(order.discountType !== 'NONE' || Number(order.discountValue||0)!==0) changed = true;
+    order.discountType = 'NONE'; order.discountValue = 0;
+    return {changed, base, max:0};
+  }
+  const max = type === 'PERCENT' ? 100 : base;
+  if(val > max){
+    val = max; changed = true;
+    if(showToast) toast(type === 'PERCENT' ? 'Percent discount cannot exceed 100%.' : `Discount cannot exceed bill amount ${money(base)}.`, true);
+  }
+  order.discountType = type;
+  order.discountValue = Math.round(val*100)/100;
+  return {changed, base, max};
+}
+calcTotals = function(o){
+  if(o) sanitizeDiscountClient(o, false);
+  const subtotal=(o?.lines||[]).reduce((s,l)=>s+((Number(l.price)||0)+(l.modifiers||[]).reduce((a,m)=>a+Number(m.price||0),0))*Number(l.qty||0),0);
+  const deliveryFee=Number(o?.deliveryFee||0);
+  const base = Math.max(0, subtotal + deliveryFee);
+  let discount=0;
+  if(o?.discountType==='PERCENT') discount=base*Math.max(0,Math.min(100,Number(o.discountValue||0)))/100;
+  if(o?.discountType==='FIXED') discount=Number(o.discountValue||0);
+  discount=Math.round(Math.min(Math.max(discount,0),base)*100)/100;
+  return {subtotal:Math.round(subtotal*100)/100,deliveryFee:Math.round(deliveryFee*100)/100,discount,total:Math.round(Math.max(0,base-discount)*100)/100};
+};
+function refreshBillFooterControls(){
+  const helper = document.createElement('div');
+  helper.className = 'discount-helper';
+  const base = discountBaseClient(currentOrder);
+  const type = currentOrder?.discountType || 'NONE';
+  helper.textContent = type === 'PERCENT' ? 'Max 100%. Switching Rs/% resets discount.' : type === 'FIXED' ? `Max ${money(base)}. Switching Rs/% resets discount.` : 'Select Rs or % then enter discount.';
+  const row = document.querySelector('.compact-discount');
+  if(row && !row.querySelector('.discount-helper')) row.appendChild(helper);
+  $$('[data-disc]').forEach(btn=>{
+    btn.onclick = ()=>{
+      const next = currentOrder.discountType === btn.dataset.disc ? 'NONE' : btn.dataset.disc;
+      currentOrder.discountType = next;
+      currentOrder.discountValue = 0;
+      renderBill();
+      setTimeout(markCartDirty,0);
+    };
+  });
+  const disc = $('#discountVal');
+  if(disc){
+    disc.setAttribute('type','number');
+    disc.setAttribute('min','0');
+    disc.setAttribute('inputmode','decimal');
+    disc.setAttribute('aria-label','Discount value');
+    disc.oninput = e=>{
+      if(!currentOrder) return;
+      let v=Math.max(0,Number(e.target.value||0));
+      if(v>0 && currentOrder.discountType==='NONE') currentOrder.discountType='FIXED';
+      currentOrder.discountValue=v;
+      const res=sanitizeDiscountClient(currentOrder,true);
+      if(res.changed) e.target.value=currentOrder.discountValue;
+      const t=calcTotals(currentOrder);
+      const totalEl=$('.compact-total b,.total-row.big b'); if(totalEl) totalEl.textContent=money(t.total);
+      const subtotalEl=$('.total-row.compact-row b'); if(subtotalEl) subtotalEl.textContent=money(t.subtotal);
+      setTimeout(markCartDirty,0);
+    };
+    disc.onchange = e=>{ sanitizeDiscountClient(currentOrder,true); renderBill(); setTimeout(markCartDirty,0); };
+  }
+}
+const __v39BaseRenderBill = renderBill;
+renderBill = function(){
+  if(currentOrder) sanitizeDiscountClient(currentOrder,false);
+  __v39BaseRenderBill();
+  refreshBillFooterControls();
+};
+const __v39BaseSaveOrder = saveOrder;
+saveOrder = async function(hold=false){
+  if(currentOrder) sanitizeDiscountClient(currentOrder,true);
+  return __v39BaseSaveOrder(hold);
+};
+const __v39BaseOpenPayModal = openPayModal;
+openPayModal = async function(){
+  if(!currentOrder) return;
+  sanitizeDiscountClient(currentOrder,true);
+  const t=calcTotals(currentOrder);
+  if(t.total<=0) return toast('Total payable is Rs 0. Check prices/discount before payment.', true);
+  await syncNow('before-pay');
+  if(!currentOrder) return toast('This bill was closed on another device.', true);
+  sanitizeDiscountClient(currentOrder,true);
+  return __v39BaseOpenPayModal();
+};
+
+
+
 boot();
