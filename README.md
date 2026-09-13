@@ -46,3 +46,16 @@ Reports now use main report menus with dedicated report types: Daily, Item Wise,
 ## Phase 23 — Professional POS Reports Rebuild
 
 Adds closeout-grade reports with summary cards, totals footers, payment reconciliation, item/category/order-type analysis, X/Y/Z style layouts, receipt-like print, and per-report export columns.
+
+
+## Phase 25 — UI/Admin Professional Polish
+
+This phase performs a full non-design-breaking UI audit pass:
+
+- Reports removed from the main POS rail and kept only in Admin Panel.
+- Admin Panel navigation polished with clearer back-office structure.
+- Image rendering uses safe aspect handling to avoid stretched logos/menu images.
+- Cards, tables, buttons, spacing, margins, shadows and states polished for a professional restaurant POS look.
+- Fast soft busy indicator fixed and visible without locking the full screen unnecessarily.
+- No Render/Neon/Cloudflare credentials are exposed to restaurant clients.
+- Existing V24 operational audit/security/backup/history/print fixes are preserved.

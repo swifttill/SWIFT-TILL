@@ -1,15 +1,13 @@
-SwiftTill POS V24 validation
-============================
+SwiftTill POS V25 Validation
+
 API syntax: PASS
 Web JS syntax: PASS
-Auth syntax: PASS
-Print agent syntax: PASS
-Auth smoke test: PASS
-360 non-UI audit: PASS
-Report blank-function audit: PASS
-Report totals audit: PASS
-Security leakage audit: PASS
-Cloud print queue audit: PASS
-Backup persistence audit: PASS
-Media/history preservation audit: PASS
+CSS polish appended: PASS
+Reports removed from POS rail: PASS
+Reports retained in Admin Panel: PASS
+Admin UI polish: PASS
+Image aspect safety: PASS
+Fast soft busy indicator: PASS
+Cloud credentials hidden: PASS
+V24 operational fixes preserved: PASS
 ZIP integrity: PASS

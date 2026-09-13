@@ -26,7 +26,7 @@ function ensurePrintArea(){
   document.body.appendChild(el);
   return el;
 }
-function ensureBusyLayer(){ let el = document.getElementById('globalBusy'); if(!el){ el = document.createElement('div'); el.id='globalBusy'; el.innerHTML='<div class="busy-card"><div class="busy-bar"><span></span></div><b>Working...</b><p>Action sent. You can continue when button responds.</p></div>'; document.body.appendChild(el); } return el; }
+function ensureBusyLayer(){ let el = document.getElementById('globalBusy'); if(!el){ el = document.createElement('div'); el.id='globalBusy'; el.innerHTML='<div class="busy-card"><div class="busy-bar"><span></span></div><b>Saving...</b><p>Fast cloud action in progress.</p></div>'; document.body.appendChild(el); } return el; }
 function setBusy(on){ busyCount = Math.max(0, busyCount + (on ? 1 : -1)); const el = ensureBusyLayer(); el.classList.toggle('show', busyCount > 0); document.body.classList.toggle('is-busy', busyCount > 0); }
 function beginAction(key){ if(pendingActions.has(key)) return false; pendingActions.add(key); return true; }
 function endAction(key){ pendingActions.delete(key); }
@@ -109,7 +109,7 @@ function renderSetup(c){
 function renderShell(){
   if(screen === 'admin') return renderAdminShell();
   app.innerHTML = `<div class="app-shell">
-    <aside class="panel sidebar">${renderSidebar()}</aside>${setupBanner()}
+    <aside class="panel sidebar">${renderSidebar()}</aside>
     <main class="main">${setupBanner()}<section class="panel topbar">${renderTopbar()}</section><section class="panel workspace" id="workspace"></section></main>
     <aside class="right-rail"><div class="panel rail-nav">${renderRailNav()}</div><section class="panel bill" id="billPanel"></section></aside>
   </div><div id="modalRoot"></div>`;
@@ -140,15 +140,13 @@ function renderSidebar(){
 }
 function renderRailNav(){
   const openCount = state?.openOrders?.length || 0;
-  const reportsAllowed = can('reports.view');
-  const adminAllowed = can('admin.menu') || can('admin.users') || can('admin.settings') || can('admin.roles') || can('admin.payments');
-  return `<button class="${centerMode==='open'?'active':''}" data-rail="open" title="Open Orders"><span class="rail-ico">▤</span><span class="rail-label">Orders</span><span class="mini-badge">${openCount}</span></button>
-  <button class="${screen==='reports'?'active':''} ${!reportsAllowed?'locked':''}" data-rail="reports" title="Reports"><span class="rail-ico">◷</span><span class="rail-label">Reports</span></button>
-  <button class="${screen==='admin'?'active':''} ${!adminAllowed?'locked':''}" data-rail="admin" title="Admin Panel"><span class="rail-ico">⚙</span><span class="rail-label">Admin</span></button>`;
+  const adminAllowed = can('admin.menu') || can('admin.users') || can('admin.settings') || can('admin.roles') || can('admin.payments') || can('reports.view');
+  return `<button class="${centerMode==='open'?'active':''}" data-rail="open" title="Open Orders"><span class="rail-ico">▤</span><span class="rail-label">Open Orders</span><span class="mini-badge">${openCount}</span></button>
+  <button class="${screen==='admin'?'active':''} ${!adminAllowed?'locked':''}" data-rail="admin" title="Admin Panel"><span class="rail-ico">⚙</span><span class="rail-label">Admin Panel</span></button>`;
 }
 function renderTopbar(){
   const d = new Date(); const active = state.activeShift;
-  return `<div class="hello"><h2>Good ${d.getHours()<12?'morning':d.getHours()<18?'afternoon':'evening'}!</h2><p>Ready to serve great food.</p></div>
+  return `<div class="hello"><h2>${esc(state.settings.businessName || 'SwiftTill POS')}</h2><p>Fast billing workspace for active restaurant operations.</p></div>
   <div class="top-items">
     <div class="top-pill">📅 <span><b>${d.toLocaleDateString('en-GB',{weekday:'short',day:'2-digit',month:'short',year:'numeric'})}</b>${d.toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})}</span></div>
     <div class="top-pill">👤 <span><b>${esc(state.user.name)}</b>${esc(state.user.roles.join(', ') || 'User')}</span></div>
@@ -171,13 +169,11 @@ function bindSidebar(){
 function bindRailNav(){
   $$('[data-rail]').forEach(b => b.onclick = () => {
     const r = b.dataset.rail;
-    if(r==='pos'){ screen='pos'; centerMode='menu'; renderShell(); }
     if(r==='open'){ screen='pos'; centerMode='open'; renderShell(); }
-    if(r==='reports'){ if(!can('reports.view')) return toast('Reports permission required', true); screen='reports'; renderShell(); }
     if(r==='admin'){
-      const ok = can('admin.menu') || can('admin.users') || can('admin.settings') || can('admin.roles') || can('admin.payments');
+      const ok = can('admin.menu') || can('admin.users') || can('admin.settings') || can('admin.roles') || can('admin.payments') || can('reports.view');
       if(!ok) return toast('Admin permission required', true);
-      screen='admin'; renderShell();
+      screen='admin'; adminTab = can('reports.view') && !(can('admin.menu') || can('admin.settings')) ? 'reports' : adminTab; renderShell();
     }
   });
 }
@@ -511,14 +507,15 @@ async function loadReport(){
 }
 function renderAdmin(ws){
   const tabs=['dashboard','setup','reports','paid','categories','items','deals','tables','takers','payments','users','roles','settings','backup'];
-  ws.innerHTML=`<div class="admin-layout"><div class="panel admin-nav">${tabs.map(t=>`<button class="${adminTab===t?'active':''}" data-admin-tab="${t}">${labelTab(t)}</button>`).join('')}</div><div class="panel admin-content" id="adminContent"></div></div>`;
+  ws.innerHTML=`<div class="admin-layout"><div class="panel admin-nav"><div class="admin-nav-title"><b>Admin Panel</b><span>Back office</span></div>${tabs.map(t=>`<button class="${adminTab===t?'active':''}" data-admin-tab="${t}"><span class="admin-nav-icon">${tabIcon(t)}</span><span>${labelTab(t)}</span></button>`).join('')}</div><div class="panel admin-content" id="adminContent"></div></div>`;
   $$('[data-admin-tab]').forEach(b=>b.onclick=()=>{adminTab=b.dataset.adminTab;renderAdmin(ws);});
   renderAdminContent();
 }
 function labelTab(t){ return ({setup:'Restaurant Setup',takers:'Order Takers',roles:'Roles & Permissions',settings:'Company / Branding',payments:'Payment Methods',paid:'Paid Orders',backup:'Backup / History'}[t] || t[0].toUpperCase()+t.slice(1)); }
+function tabIcon(t){ return ({dashboard:'⌂',setup:'✓',reports:'▥',paid:'▤',categories:'◫',items:'🍔',deals:'%',tables:'▣',takers:'👥',payments:'₨',users:'👤',roles:'🔐',settings:'⚙',backup:'↧'}[t]||'•'); }
 function renderAdminContent(){
   const c=$('#adminContent');
-  if(adminTab==='dashboard') return c.innerHTML=`<div class="admin-hero"><div class="admin-hero-title"><h3>Admin Dashboard</h3><p>Control menu, users, reports, company branding and receipt/printer settings.</p></div></div><div class="report-grid"><div class="card metric"><p>Categories</p><h3>${state.categories.length}</h3></div><div class="card metric"><p>Menu Items</p><h3>${state.items.length}</h3></div><div class="card metric"><p>Tables</p><h3>${state.tables.length}</h3></div><div class="card metric"><p>Open Orders</p><h3>${state.openOrders.length}</h3></div><div class="card metric"><p>Users</p><h3>${state.users.length}</h3></div><div class="card metric"><p>Roles</p><h3>${state.roles.length}</h3></div></div><div class="card subcard mt"><h3>Recent Audit</h3>${state.auditLogs.map(a=>`<p><b>${esc(a.action)}</b> — ${esc(a.userName)} — ${new Date(a.createdAt).toLocaleString()}</p>`).join('') || '<p>No audit yet.</p>'}</div>`;
+  if(adminTab==='dashboard') return c.innerHTML=`<div class="admin-hero"><div class="admin-hero-title"><h3>Control Center</h3><p>Restaurant setup, menu management, reports, printing and secure access controls.</p></div><div class="admin-status-pill ${state.setup?.complete?'ok':'warn'}">${state.setup?.complete?'Ready':'Setup Pending'}</div></div><div class="report-grid admin-kpi-grid"><div class="card metric"><p>Categories</p><h3>${state.categories.length}</h3></div><div class="card metric"><p>Menu Items</p><h3>${state.items.length}</h3></div><div class="card metric"><p>Tables</p><h3>${state.tables.length}</h3></div><div class="card metric"><p>Open Orders</p><h3>${state.openOrders.length}</h3></div><div class="card metric"><p>Paid Bills</p><h3>${state.paidOrders.length}</h3></div><div class="card metric"><p>Users</p><h3>${state.users.length}</h3></div></div><div class="grid2 mt"><div class="card subcard admin-action-card"><h3>Operational Shortcuts</h3><button class="ghost-btn" onclick="adminTab='reports';renderAdminContent()">Reports</button><button class="ghost-btn" onclick="adminTab='items';renderAdminContent()">Menu Items</button><button class="ghost-btn" onclick="adminTab='settings';renderAdminContent()">Company & Receipt</button><button class="ghost-btn" onclick="adminTab='setup';renderAdminContent()">Setup Checklist</button></div><div class="card subcard recent-audit-card"><h3>Recent Audit</h3>${state.auditLogs.slice(0,8).map(a=>`<p><b>${esc(a.action.replace(/_/g,' '))}</b><span>${esc(a.userName)} • ${new Date(a.createdAt).toLocaleString()}</span></p>`).join('') || '<p>No audit yet.</p>'}</div></div>`;
   if(adminTab==='setup') return renderSetup(c);
   if(adminTab==='reports') return renderReports(c);
   if(adminTab==='paid') return renderPaidOrders(c);
@@ -649,7 +646,7 @@ function renderReports(ws){
     const takerOptions=(state.orderTakers||[]).map(t=>`<option value="${esc(t.id)}">${esc(t.name)}</option>`).join('');
     const shiftOptions=(state.shifts||[]).map(s=>`<option value="${esc(s.id)}">#${s.number} ${s.status}</option>`).join('');
     ws.innerHTML=`<div class="report-page admin-report-shell pro-report-screen">
-      <div class="module-title"><div><h3>Reports</h3><p class="muted-note">Professional POS sales, cash drawer, item, payment and X/Z closeout reports.</p></div><div class="actions-mini"><button class="ghost-btn" id="exportReport" disabled>Export Excel</button><button class="ghost-btn" id="printReportBtn" disabled>Print</button></div></div>
+      <div class="module-title"><div><h3>Reports</h3><p class="muted-note">Admin-only POS sales, cash drawer, item, payment and X/Z closeout reports.</p></div><div class="actions-mini"><button class="ghost-btn" id="exportReport" disabled>Export Excel</button><button class="ghost-btn" id="printReportBtn" disabled>Print</button></div></div>
       <div class="reports-layout">
         <div class="report-menu card subcard">
           <h4>Sales</h4>${reportMenuButton('daily','Daily Summary','Totals + payments')}${reportMenuButton('custom','Custom Detailed','Full bill details')}${reportMenuButton('ordertype','Order Type','Dine-in / takeaway / delivery')}

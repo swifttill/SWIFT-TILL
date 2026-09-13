@@ -1,6 +1,6 @@
 {
   "name": "swifttill-pos-monorepo",
-  "version": "24.0.0",
+  "version": "25.0.0",
   "private": true,
   "description": "SwiftTill POS V24: 360 operational audit fixes for security, reports, print queue, backup persistence and POS business rules.",
   "workspaces": [
