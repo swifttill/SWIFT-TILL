@@ -1,6 +1,6 @@
 {
   "name": "swifttill-pos-monorepo",
-  "version": "33.0.0",
+  "version": "34.0.0",
   "private": true,
   "description": "SwiftTill POS V33: R2 media lifecycle hard-delete on replace/delete with orphan media cleanup.",
   "workspaces": [

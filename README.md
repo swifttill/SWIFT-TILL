@@ -178,3 +178,20 @@ This phase fixes Cloudflare R2 media cleanup so the bucket does not keep old ite
 - Daily orphan cleanup scans managed media prefixes and deletes unreferenced R2 files.
 - Owner/admin endpoint added: POST /api/admin/media-cleanup.
 - Backups under swifttill/backups are not touched by media cleanup.
+
+
+## Phase 34 — Mobile, Reports Navigation, Favicon and Operational Scenarios
+
+This package adds a client-facing operational UX hardening pass:
+
+- Enlarged high-contrast SwiftTill favicon/app icons for browser tabs and PWA installs.
+- Reports submenus now live inside the Admin left navigation under Reports.
+- Reports content no longer opens a second report-menu workspace.
+- Organization/restaurant logo is included on report screen headers, A4/PDF reports and thermal report slips.
+- Mobile POS layout is reordered for restaurant use: header, mobile actions, categories/search, then menu/workspace.
+- Mobile bill drawer has visible close/back control.
+- Mobile action strip provides Menu, Open Bills and Pay/Open Bill controls.
+- Operational Safety admin section documents recovery for browser crash, power loss, internet drop, Render restart, printer offline, double-click payment, duplicate table, media cleanup and closeout.
+- API endpoint `/api/ops/scenarios` added for live scenario readiness.
+
+Version: `34.0.0-mobile-reports-ops-audit`

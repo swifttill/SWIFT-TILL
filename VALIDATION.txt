@@ -1,7 +1,10 @@
-SwiftTill POS V33 validation
+SwiftTill POS V34 validation
+
 API syntax PASS
-Storage/R2 syntax PASS
 Web JS syntax PASS
-Auth smoke test PASS
-R2 media lifecycle cleanup logic PASS
+Print agent syntax PASS
+Favicon assets PASS
+Mobile CSS overrides PASS
+Reports left-nav submenu PASS
+Operational scenarios endpoint PASS
 ZIP integrity PASS

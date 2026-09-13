@@ -1165,4 +1165,135 @@ renderBill = function(){
   if(bp && currentOrder){ bp.insertAdjacentHTML('beforeend','<div class="billing-brand-footer">SwiftTill POS</div>'); }
 };
 
+
+/* ============================================================
+   SwiftTill V34 Mobile + Reports Navigation + Operational Scenarios
+   - visible favicon/branding support
+   - reports submenu lives in Admin left navigation
+   - organization logo on reports
+   - mobile back/close/open-bills/pay controls
+   - operational scenario checklist for local restaurant risks
+============================================================ */
+const V34_REPORT_GROUPS = [
+  ['Sales', [['daily','Daily'],['custom','Custom'],['ordertype','Order Type']]],
+  ['Menu', [['itemwise','Item Wise'],['category','Category Wise']]],
+  ['Cash', [['payment','Payment'],['discount','Discounts'],['voidrefund','Void/Refund']]],
+  ['Closeout', [['x','X Report'],['y','Y Report'],['z','Z Report']]]
+];
+function v34ReportNav(){
+  return `<div class="admin-report-subnav">${V34_REPORT_GROUPS.map(([g,items])=>`<div class="report-nav-group"><small>${esc(g)}</small>${items.map(([key,label])=>`<button class="${reportType===key?'active':''}" data-report-type="${key}"><span>${esc(label)}</span></button>`).join('')}</div>`).join('')}</div>`;
+}
+function v34OrgLogoImg(cls='report-org-logo'){
+  const s = state?.settings || {};
+  const src = s.logoUrl || '/assets/img/icon-192.png';
+  return `<img class="${cls}" src="${esc(src)}" alt="${esc(s.businessName || 'Restaurant logo')}">`;
+}
+const __v34BaseLabelTab = labelTab;
+labelTab = function(t){ return t==='ops' ? 'Operational Safety' : __v34BaseLabelTab(t); };
+const __v34BaseTabIcon = tabIcon;
+tabIcon = function(t){ return t==='ops' ? '⚡' : __v34BaseTabIcon(t); };
+renderAdmin = function(ws){
+  if(adminTab === 'backup' || adminTab === 'cloud') adminTab = 'dashboard';
+  const tabs=['dashboard','setup','reports','paid','categories','items','deals','tables','takers','payments','users','roles','settings','ops'];
+  ws.innerHTML=`<div class="admin-layout v34-admin-layout"><div class="panel admin-nav v34-admin-nav"><div class="admin-nav-title"><b>Admin Panel</b><span>Back office</span></div>${tabs.map(t=>`<div class="admin-nav-slot ${adminTab===t?'active-slot':''}"><button class="${adminTab===t?'active':''}" data-admin-tab="${t}"><span class="admin-nav-icon">${tabIcon(t)}</span><span>${labelTab(t)}</span></button>${t==='reports'?v34ReportNav():''}</div>`).join('')}</div><div class="panel admin-content" id="adminContent"></div></div>`;
+  $$('[data-admin-tab]').forEach(b=>b.onclick=()=>{adminTab=b.dataset.adminTab;renderAdmin(ws);});
+  $$('[data-report-type]').forEach(b=>b.onclick=()=>{reportType=b.dataset.reportType; adminTab='reports'; renderAdmin(ws);});
+  renderAdminContent();
+};
+const __v34BaseRenderAdminContent = renderAdminContent;
+renderAdminContent = function(){
+  const c=$('#adminContent');
+  if(adminTab==='ops') return renderOpsSafety(c);
+  return __v34BaseRenderAdminContent();
+};
+function renderReports(ws){
+  try{
+    const defs = reportDateDefaults(reportType);
+    const paymentOptions=(state.paymentMethods||[]).filter(p=>p.active!==false).map(p=>`<option value="${esc(p.name)}">${esc(p.name)}</option>`).join('');
+    const itemOptions=[...(state.items||[]).map(i=>`<option value="${esc(i.id)}">${esc(i.name)}</option>`),...(state.deals||[]).map(d=>`<option value="${esc(d.id)}">Deal: ${esc(d.name)}</option>`)].join('');
+    const catOptions=(state.categories||[]).filter(c=>c.id!=='cat_all' && c.id!=='all').map(c=>`<option value="${esc(c.id)}">${esc(c.name)}</option>`).join('');
+    const userOptions=(state.users||[]).map(u=>`<option value="${esc(u.id)}">${esc(u.name)}</option>`).join('');
+    const takerOptions=(state.orderTakers||[]).map(t=>`<option value="${esc(t.id)}">${esc(t.name)}</option>`).join('');
+    const shiftOptions=(state.shifts||[]).map(s=>`<option value="${esc(s.id)}">#${s.number} ${esc(s.status||'')}</option>`).join('');
+    ws.innerHTML=`<div class="report-page admin-report-shell pro-report-screen qb-report-module v34-report-page">
+      <div class="module-title v34-report-title"><div><h3>${esc(currentReportTitle())}</h3><p class="muted-note">Reports submenu left sidebar mein hai. Screen view rich hai; PDF/A4 aur Thermal print alag professional templates hain.</p></div><div class="actions-mini"><button class="ghost-btn" id="exportReport" disabled>Export Excel</button><button class="ghost-btn" id="printReportPdfBtn" disabled>PDF / A4</button><button class="primary-btn" id="printReportThermalBtn" disabled>Thermal Print</button></div></div>
+      <div class="report-work card subcard v34-report-work">
+        <div class="report-headline branded-report-headline"><div class="brand-report-name">${v34OrgLogoImg('report-org-logo screen-logo')}<div><h3 id="reportTitle">${esc(currentReportTitle())}</h3><span>${esc(state.settings?.businessName||'SwiftTill POS')}</span></div></div></div>
+        <div class="report-filter-grid compact-filters" id="reportFilters">
+          <div class="field report-filter date-filter"><label>From</label><input type="date" id="fromDate" value="${defs.from}"></div>
+          <div class="field report-filter date-filter"><label>To</label><input type="date" id="toDate" value="${defs.to}"></div>
+          <div class="field report-filter payment-filter"><label>Payment Mode</label><select id="paymentMode"><option value="">All</option>${paymentOptions}</select></div>
+          <div class="field report-filter ordertype-filter"><label>Order Type</label><select id="orderType"><option value="">All</option><option value="DINE_IN">Dine In</option><option value="DELIVERY">Delivery</option><option value="TAKEAWAY">Takeaway</option></select></div>
+          <div class="field report-filter item-filter"><label>Item / Deal</label><select id="itemId"><option value="">All</option>${itemOptions}</select></div>
+          <div class="field report-filter category-filter"><label>Category</label><select id="categoryFilter"><option value="">All</option>${catOptions}</select></div>
+          <div class="field report-filter cashier-filter"><label>Cashier</label><select id="cashierId"><option value="">All</option>${userOptions}</select></div>
+          <div class="field report-filter taker-filter"><label>Order Taker</label><select id="orderTakerId"><option value="">All</option>${takerOptions}</select></div>
+          <div class="field report-filter shift-filter"><label>Shift</label><select id="shiftId"><option value="">All</option>${shiftOptions}</select></div>
+          <label class="check report-filter discount-filter"><input type="checkbox" id="discountOnly"> Discounted only</label>
+          <label class="check report-filter refund-filter"><input type="checkbox" id="refundOnly"> Refunded only</label>
+          <button class="primary-btn" id="runReport">Run Report</button>
+        </div>
+        <div id="reportResult" class="mt"><div class="empty-cart compact-empty"><b>Select report from left menu.</b><p>Run report to show totals, PDF/A4, thermal slip print and export.</p></div></div>
+      </div>
+    </div>`;
+    updateReportFilterVisibility();
+    $('#runReport').onclick=runReport;
+    $('#printReportPdfBtn').onclick=()=>printReportHtml('a4');
+    $('#printReportThermalBtn').onclick=()=>printReportHtml('thermal');
+    $('#exportReport').onclick=()=>downloadApi(`/api/export?${reportQuery()}`,`swifttill-${reportType}-report-${Date.now()}.csv`).catch(e=>toast(e.message,true));
+  }catch(e){ ws.innerHTML=`<div class="card subcard error-state"><h3>Reports failed to render</h3><p>${esc(e.message)}</p><button class="primary-btn" onclick="renderAdminContent()">Reload Reports</button></div>`; }
+}
+const __v34BaseA4ReportHtml = buildA4ReportHtml;
+buildA4ReportHtml = function(r){
+  let html = __v34BaseA4ReportHtml(r);
+  const logo = v34OrgLogoImg('report-org-logo a4-logo');
+  html = html.replace('<div class="qb-head"><div><h1>', '<div class="qb-head"><div class="qb-brand-block">'+logo+'<div><h1>');
+  html = html.replace('</p></div><div><b>', '</p></div></div><div><b>');
+  return html;
+};
+const __v34BaseThermalReportHtml = buildThermalReportHtml;
+buildThermalReportHtml = function(r){
+  let html = __v34BaseThermalReportHtml(r);
+  const logo = v34OrgLogoImg('thermal-logo');
+  return html.replace('<div class="thermal-report"><div class="tr-center"><b>', '<div class="thermal-report"><div class="tr-center">'+logo+'<br><b>');
+};
+const __v34BaseRenderShell = renderShell;
+renderShell = function(){
+  __v34BaseRenderShell();
+  if(screen === 'pos') injectMobilePosControls();
+};
+function injectMobilePosControls(){
+  const topbar = document.querySelector('.topbar');
+  if(topbar && !document.querySelector('.mobile-pos-strip')){
+    topbar.insertAdjacentHTML('afterend', `<div class="mobile-pos-strip panel"><button id="mobileBackMenu" type="button">← Menu</button><button id="mobileOpenBills" type="button">Open Bills <b>${state.openOrders?.length||0}</b></button><button id="mobilePayBill" type="button">${currentOrder && hasOrderLines(currentOrder) ? 'Pay Now' : 'Open Bill'}</button></div>`);
+    $('#mobileBackMenu').onclick=()=>{ setMobileBill(false); screen='pos'; centerMode='menu'; renderShell(); };
+    $('#mobileOpenBills').onclick=()=>{ setMobileBill(false); screen='pos'; centerMode='open'; renderShell(); };
+    $('#mobilePayBill').onclick=()=>{ if(currentOrder && hasOrderLines(currentOrder)) openPayModal(); else setMobileBill(true); };
+  }
+  addMobileCartClose();
+}
+function addMobileCartClose(){
+  const bp=$('#billPanel'); const head=bp?.querySelector('.bill-head');
+  if(head && !head.querySelector('#mobileCloseCart')){
+    head.insertAdjacentHTML('beforeend','<button class="mobile-close-cart" id="mobileCloseCart" type="button" aria-label="Close bill">×</button>');
+    $('#mobileCloseCart').onclick=()=>setMobileBill(false);
+  }
+}
+const __v34BaseRenderBill = renderBill;
+renderBill = function(){
+  __v34BaseRenderBill();
+  addMobileCartClose();
+  const fab=$('#mobileCartFab b'); if(fab) fab.textContent=mobileCartSummary();
+  const pay=$('#mobilePayBill'); if(pay) pay.textContent=currentOrder && hasOrderLines(currentOrder) ? 'Pay Now' : 'Open Bill';
+};
+async function renderOpsSafety(c){
+  c.innerHTML = `<div class="module-title"><div><h3>Operational Safety</h3><p class="muted-note">Local restaurant scenarios: crash, power cut, internet drop, printer offline and recovery steps.</p></div><button class="ghost-btn" id="refreshOps">Refresh</button></div><div id="opsScenarioBox" class="ops-grid"><div class="report-loading"><b>Loading safety matrix...</b><span>Checking live system readiness.</span></div></div>`;
+  $('#refreshOps').onclick=()=>renderOpsSafety(c);
+  try{
+    const j=await api('/api/ops/scenarios', null, 'GET');
+    const ready=j.readiness||{};
+    $('#opsScenarioBox').innerHTML=`<div class="ops-status card subcard"><h3>Readiness</h3>${Object.entries(ready).map(([k,v])=>`<p><span>${esc(k.replace(/([A-Z])/g,' $1'))}</span><b>${esc(v)}</b></p>`).join('')}</div><div class="ops-list">${(j.scenarios||[]).map(x=>`<div class="card subcard ops-card"><h3>${esc(x.scenario)}</h3><p><b>Protection:</b> ${esc(x.protection)}</p><p><b>Action:</b> ${esc(x.action)}</p></div>`).join('')}</div>`;
+  }catch(e){ $('#opsScenarioBox').innerHTML=`<div class="empty-cart error-state"><b>Safety matrix failed</b><p>${esc(e.message)}</p></div>`; }
+}
+
 boot();
