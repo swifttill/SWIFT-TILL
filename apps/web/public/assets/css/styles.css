@@ -18,7 +18,7 @@
 @media (max-width:1120px){body{overflow:auto}.app-shell{height:auto;min-height:100vh;grid-template-columns:230px minmax(0,1fr);grid-template-areas:"side main" "rail rail";overflow:visible}.sidebar{grid-area:side;max-height:calc(100vh - 20px);position:sticky;top:10px}.main{grid-area:main}.right-rail{grid-area:rail;display:grid;grid-template-columns:1fr;min-height:680px}.workspace{min-height:660px}.bill{min-height:520px}.topbar{position:sticky;top:10px;z-index:20}.admin-layout{grid-template-columns:1fr}.admin-nav{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));}}
 @media (max-width:820px){.app-shell{grid-template-columns:1fr;grid-template-areas:"main" "side" "rail";padding:8px}.sidebar{position:static;max-height:none}.brand img{width:150px}.topbar{position:static}.seg{grid-template-columns:1fr}.item-grid{grid-template-columns:repeat(auto-fit,minmax(145px,1fr))}.grid2,.grid3,.order-type-grid{grid-template-columns:1fr}.rail-nav{grid-template-columns:repeat(2,1fr)}.actions{grid-template-columns:1fr}.admin-screen{padding:8px}.modal{padding:14px}.admin-table{font-size:13px}}
 @media (max-width:520px){.module-title{align-items:flex-start;flex-direction:column}.item-grid{grid-template-columns:1fr}.tables-mini{grid-template-columns:repeat(2,1fr)}.cart-line{grid-template-columns:44px 1fr}.cart-actions{grid-column:1/-1;display:flex;justify-content:space-between}.top-items{display:grid;grid-template-columns:1fr 1fr;width:100%}.top-pill{border-left:0;background:#f6f9ff;border-radius:12px}.rail-nav{grid-template-columns:1fr 1fr}.discount-row{grid-template-columns:1fr}.payment-strip{grid-template-columns:1fr}.admin-table{display:block;overflow-x:auto;white-space:nowrap}}
-@media print{body>*:not(.print-only),#app,#toast{display:none!important}.print-only{display:block!important}.receipt{width:80mm;font-size:12px}.receipt h3{font-size:15px}}
+@media print{.print-only{display:block!important}.receipt{width:80mm;font-size:12px}.receipt h3{font-size:15px}}
 
 /* ============================================================
    SwiftTill V3 responsive production pass
@@ -298,3 +298,8 @@ button:disabled{opacity:.52;cursor:not-allowed;box-shadow:none!important;}
 
 /* Phase 16 audit fixes */
 .price-field input{font-weight:900;color:var(--navy);border-color:#8bb9ff!important;background:#f8fbff!important}.price-field small{display:block;margin-top:5px;color:#547099;font-weight:800;font-size:11px}.required-star{color:var(--red)}.price-missing{background:#f59e0b!important;color:#111827!important}.login-brand-text{width:112px;height:82px;margin:0 auto 10px;border-radius:22px;background:linear-gradient(135deg,#eaf3ff,#fff);border:1px solid var(--line);display:grid;place-items:center;color:var(--blue);box-shadow:var(--shadow2)}.login-brand-text b{font-size:24px;line-height:1}.login-brand-text span{font-weight:950;color:var(--navy);margin-top:-20px}.cat-btn.no-icon span{white-space:normal!important;overflow:visible!important;text-overflow:clip!important;line-height:1.2}.admin-table td .danger-text,.danger-text{color:#dc2626!important;font-weight:950}.item-card.sold .price.danger-text{color:#dc2626!important}
+
+/* Phase 17 print/report fixes */
+.bill-quick-actions{grid-template-columns:repeat(auto-fit,minmax(96px,1fr));}
+.error-state{border-color:#fecaca;background:#fff7f7;color:#7f1d1d;}
+@media print{#globalBusy,.modal-backdrop,#toast{display:none!important} body{background:#fff!important} #printArea{display:block!important;visibility:visible!important}}

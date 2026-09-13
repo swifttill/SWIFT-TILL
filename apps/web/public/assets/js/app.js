@@ -13,6 +13,17 @@ let selectedOrderType = 'DINE_IN';
 let lastReceipt = null;
 let busyCount = 0;
 let lastActionAt = 0;
+function ensurePrintArea(){
+  const areas = $$('#printArea');
+  const bodyArea = areas.find(x => x.parentElement === document.body);
+  areas.filter(x => x !== bodyArea).forEach(x => x.remove());
+  if(bodyArea){ bodyArea.className = 'print-only'; return bodyArea; }
+  const el = document.createElement('div');
+  el.id = 'printArea';
+  el.className = 'print-only';
+  document.body.appendChild(el);
+  return el;
+}
 function ensureBusyLayer(){ let el = document.getElementById('globalBusy'); if(!el){ el = document.createElement('div'); el.id='globalBusy'; el.innerHTML='<div class="busy-card"><div class="busy-bar"><span></span></div><b>Saving...</b><p>Real cloud save in progress.</p></div>'; document.body.appendChild(el); } return el; }
 function setBusy(on){ busyCount = Math.max(0, busyCount + (on ? 1 : -1)); const el = ensureBusyLayer(); el.classList.toggle('show', busyCount > 0); document.body.classList.toggle('is-busy', busyCount > 0); }
 function hasOrderLines(o=currentOrder){ return Array.isArray(o?.lines) && o.lines.some(l => Number(l.qty||0) > 0); }
@@ -68,11 +79,11 @@ function renderShell(){
     <aside class="panel sidebar">${renderSidebar()}</aside>
     <main class="main"><section class="panel topbar">${renderTopbar()}</section><section class="panel workspace" id="workspace"></section></main>
     <aside class="right-rail"><div class="panel rail-nav">${renderRailNav()}</div><section class="panel bill" id="billPanel"></section></aside>
-  </div><div id="modalRoot"></div><div class="print-only" id="printArea"></div>`;
+  </div><div id="modalRoot"></div>`;
   bindSidebar(); bindRailNav(); renderWorkspace(); renderBill();
 }
 function renderAdminShell(){
-  app.innerHTML = `<div class="admin-screen"><section class="panel topbar">${renderTopbar()}<div class="admin-top-actions"><button class="ghost-btn" id="backPosBtn">Back to POS</button></div></section><section class="panel admin-page" id="workspace"></section></div><div id="modalRoot"></div><div class="print-only" id="printArea"></div>`;
+  app.innerHTML = `<div class="admin-screen"><section class="panel topbar">${renderTopbar()}<div class="admin-top-actions"><button class="ghost-btn" id="backPosBtn">Back to POS</button></div></section><section class="panel admin-page" id="workspace"></section></div><div id="modalRoot"></div>`;
   $('#backPosBtn').onclick = () => { screen='pos'; renderShell(); };
   $('#logoutBtn') && ($('#logoutBtn').onclick = logout);
   $('#shiftBtn') && ($('#shiftBtn').onclick = () => state.activeShift ? openCloseShift() : openOpenShift());
@@ -188,7 +199,8 @@ function renderBill(){
   const bp=$('#billPanel'); if(!bp) return;
   if(!currentOrder){ bp.innerHTML=`<div class="bill-head"><h2>Current Order</h2><b>—</b></div><div class="empty-cart"><div><b>No active bill</b><p>Press New Order to start billing.</p></div></div>`; return; }
   const t=calcTotals(currentOrder);
-  const billActions = currentOrder.type==='DINE_IN' ? `<button class="secondary-btn mini-action" id="moveTableBtn">Move Table</button><button class="secondary-btn mini-action" id="splitBillBtn">Split Bill</button>` : `<button class="secondary-btn mini-action" id="splitBillBtn">Split Bill</button>`;
+  const printBillButton = `<button class="secondary-btn mini-action" id="printBillBtn" ${hasOrderLines(currentOrder)?'':'disabled title="Add item first"'}>Print Bill</button>`;
+  const billActions = currentOrder.type==='DINE_IN' ? `${printBillButton}<button class="secondary-btn mini-action" id="moveTableBtn">Move Table</button><button class="secondary-btn mini-action" id="splitBillBtn">Split Bill</button>` : `${printBillButton}<button class="secondary-btn mini-action" id="splitBillBtn">Split Bill</button>`;
   const deliveryRow = currentOrder.type==='DELIVERY' ? `<div class="total-row"><span>Delivery Fee</span><b>${money(t.deliveryFee)}</b></div>` : '';
   bp.innerHTML=`<div class="bill-head"><h2>Current Order</h2><b>#${esc(currentOrder.number||'Draft')}</b></div><div class="orderbox">${orderBoxRows(currentOrder)}</div><div class="line-list">${currentOrder.lines.length?currentOrder.lines.map(cartLine).join(''):'<div class="empty-cart">Add items from the center menu.</div>'}</div><div class="totals compact-totals"><div class="total-row"><span>Subtotal</span><b>${money(t.subtotal)}</b></div><div class="discount-row"><span>Discount</span><div class="switch"><button class="${currentOrder.discountType==='FIXED'?'active':''}" data-disc="FIXED">Rs</button><button class="${currentOrder.discountType==='PERCENT'?'active':''}" data-disc="PERCENT">%</button></div><input class="small-input" id="discountVal" value="${Number(currentOrder.discountValue||0)}"></div>${deliveryRow}<div class="total-row big"><span>Total</span><b>${money(t.total)}</b></div></div><div class="bill-quick-actions">${billActions}</div><label class="check"><input type="checkbox" id="printRemember" ${getPrintDefault()?'checked':''}> Print receipt after payment</label><div class="actions"><button class="hold" id="holdBtn" ${hasOrderLines(currentOrder)?'':'disabled title="Add item first"'}>Ⅱ HOLD</button><button class="pay" id="payBtn" ${hasOrderLines(currentOrder)?'':'disabled title="Add item first"'}>▣ PAY ${money(t.total)}</button></div>`;
   $$('[data-line-minus]').forEach(b=>b.onclick=()=>changeQty(b.dataset.lineMinus,-1));
@@ -201,6 +213,7 @@ function renderBill(){
   $('#printRemember').onchange=e=>localStorage.setItem('swifttill_print_default', e.target.checked?'1':'0');
   $('#holdBtn').onclick=()=>saveOrder(true);
   $('#payBtn').onclick=()=>openPayModal();
+  $('#printBillBtn') && ($('#printBillBtn').onclick=()=>printCurrentBill());
   $('#moveTableBtn') && ($('#moveTableBtn').onclick=()=>openMoveTableModal());
   $('#splitBillBtn') && ($('#splitBillBtn').onclick=()=>openSplitBillModal());
 }
@@ -238,7 +251,24 @@ function openSplitBillModal(){
   const update=()=>{ const a=Number($('#splitFirst').value||0); const persons=Math.max(2,Number($('#splitPersons').value||2)); const balance=t.total-a; $('#billEntered').textContent=money(a); $('#billBalanceLabel').textContent=balance<0?'Extra / Change':'Remaining'; $('#billRemaining').textContent=money(Math.abs(balance)); $('#billEqual').textContent=money(t.total/persons); $('#billRemaining').classList.toggle('danger-text', balance>0); $('#billRemaining').classList.toggle('ok-text', balance<=0); };
   $('#splitFirst').addEventListener('input',update); $('#splitPersons').addEventListener('input',update); $('#goSplitPay').onclick=()=>{ closeModal(); openPayModal(); setTimeout(()=>{ const s=$('#splitPay'); if(s){ s.checked=true; s.dispatchEvent(new Event('change')); } },50); }; update();
 }
-function printReportArea(){ const html=$('#printReportArea')?.innerHTML || ''; $('#printArea').innerHTML=`<div class="report-print">${html}</div>`; setTimeout(()=>window.print(),100); }
+function printReportArea(){
+  const html=$('#printReportArea')?.innerHTML || '';
+  if(!html.trim()) return toast('Run report first. No report content available to print.', true);
+  ensurePrintArea().innerHTML=`<div class="report-print">${html}</div>`;
+  setTimeout(()=>window.print(),120);
+}
+function currentBillReceipt(){
+  if(!currentOrder || !currentOrder.lines || !currentOrder.lines.length) return null;
+  const table=state.tables.find(t=>t.id===currentOrder.tableId)?.name||'';
+  return {business:state.settings.businessName,branchName:state.settings.branchName,phone:state.settings.phone,address:state.settings.address,logoUrl:state.settings.logoUrl,header:'UNPAID BILL / ESTIMATE',footer:'Not paid. Use payment screen for final receipt.',receiptWidth:state.settings.receiptWidth,showLogoOnReceipt:state.settings.showLogoOnReceipt,showCustomerOnReceipt:state.settings.showCustomerOnReceipt,showOrderTakerOnReceipt:state.settings.showOrderTakerOnReceipt,showCashierOnReceipt:state.settings.showCashierOnReceipt,showPaymentBreakdown:false,number:currentOrder.number||'Draft',date:new Date().toISOString(),cashier:state.user?.name||currentOrder.cashierName,type:currentOrder.type,table,guests:currentOrder.guests,orderTaker:currentOrder.orderTakerName,customer:currentOrder.customerName,mobile:currentOrder.mobile,lines:currentOrder.lines,totals:calcTotals(currentOrder),payments:[],unpaid:true};
+}
+function printCurrentBill(){
+  if(!currentOrder || !currentOrder.lines.length) return toast('Add items before printing bill', true);
+  const r=currentBillReceipt();
+  if(!r || r.totals.total<=0) return toast('Set item/deal price before printing bill', true);
+  showReceiptModal(r, false, true);
+}
+
 
 function openPayModal(){
   if(!currentOrder || !currentOrder.lines.length) return toast('Add items before payment',true);
@@ -268,18 +298,21 @@ function openPayModal(){
   $$('[data-paytab]').forEach(b=>b.onclick=()=>{tab=b.dataset.paytab;draw();}); $('#splitPay').onchange=draw; draw();
   $('#completePay').onclick=async()=>{ if(!requireOrderLines('Add at least one item before Payment')) return; if(!requirePositiveTotal('Total payable is Rs 0. Set price in Admin before payment.')) return; try{ const split=$('#splitPay').checked; let payments=[]; if(split){ const cash=Number($('#cashAmt').value||0), card=Number($('#cardAmt').value||0), online=Number($('#onlineAmt').value||0); const paid=cash+card+online; const remaining=t.total-paid; if(remaining>0.009) throw new Error(`Remaining amount: ${money(remaining)}`); const extra=Math.max(0,paid-t.total); if(extra>0.009 && cash<extra) throw new Error('Extra amount must be cash so change can be returned.'); const cashRevenue=Math.max(0,cash-extra); payments=[{method:'Cash',amount:cashRevenue,received:cash,change:extra},{method:'Card',amount:card},{method:'Online',amount:online}].filter(p=>p.amount>0 || p.received>0); } else if(tab==='cash'){ const rec=Number($('#cashAmount').value||0); if(rec<t.total) throw new Error('Cash received is less than total'); payments=[{method:'Cash',amount:t.total,received:rec,change:Math.max(0,rec-t.total)}]; } else if(tab==='card'){ const entered=Number($('#cardAmount').value||0); if(entered<t.total) throw new Error(`Remaining amount: ${money(t.total-entered)}`); if(entered>t.total) throw new Error('Card extra detected. Enter exact card amount.'); payments=[{method:'Card',amount:t.total,received:entered,reference:$('#cardRef').value,change:0}]; } else { const entered=Number($('#onlineAmount').value||0); if(entered<t.total) throw new Error(`Remaining amount: ${money(t.total-entered)}`); if(entered>t.total) throw new Error('Online extra detected. Enter exact online amount.'); payments=[{method:'Online',amount:t.total,received:entered,reference:$('#onlineRef').value,change:0}]; } const j=await api('/api/orders/pay',{...currentOrder,payments}); lastReceipt=j.receipt; const doPrint=$('#payPrint').checked; localStorage.setItem('swifttill_print_default', doPrint?'1':'0'); currentOrder=null; screen='pos'; centerMode='menu'; await loadState(); renderShell(); closeModal(); toast('Payment completed'); showReceiptModal(lastReceipt, doPrint); }catch(e){toast(e.message,true);} };
 }
-function showReceiptModal(r, autoPrint=false){
+function showReceiptModal(r, autoPrint=false, unpaid=false){
   if(!r) return;
-  openModal(`<div class="modal-head"><h2>Paid Bill #${esc(r.number)}</h2><button class="x" onclick="closeModal()">×</button></div><div class="receipt-preview-wrap">${receiptHTML(r)}</div><div class="receipt-actions"><button class="ghost-btn" onclick="closeModal();screen='pos';centerMode='menu';renderShell();">Close</button><button class="primary-btn" id="modalPrintReceipt">Print Receipt</button></div>`, false);
+  openModal(`<div class="modal-head"><h2>${unpaid || r.unpaid ? 'Unpaid Bill' : 'Paid Bill'} #${esc(r.number)}</h2><button class="x" onclick="closeModal()">×</button></div><div class="receipt-preview-wrap">${receiptHTML(r)}</div><div class="receipt-actions"><button class="ghost-btn" onclick="closeModal();screen='pos';centerMode='menu';renderShell();">Close</button><button class="primary-btn" id="modalPrintReceipt">${unpaid || r.unpaid ? 'Print Bill' : 'Print Receipt'}</button></div>`, false);
   $('#modalPrintReceipt').onclick=()=>printReceipt(r);
   if(autoPrint) setTimeout(()=>printReceipt(r),250);
 }
 async function printReceipt(r){
-  $('#printArea').innerHTML=receiptHTML(r);
+  if(!r || !(r.lines||[]).length) return toast('Nothing to print', true);
+  const html = receiptHTML(r);
+  const printEl = ensurePrintArea();
+  printEl.innerHTML = html;
   const agentUrl=(state?.settings?.localAgentUrl||'').trim();
   if(agentUrl){
     try{
-      const res=await fetch(agentUrl,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({type:'receipt',receipt:r,html:receiptHTML(r),text:receiptText(r)})});
+      const res=await fetch(agentUrl,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({type:r.unpaid?'unpaid-bill':'receipt',receipt:r,html,text:receiptText(r)})});
       if(res.ok){ toast('Receipt sent to local printer agent'); return; }
     }catch(e){}
   }
@@ -287,7 +320,7 @@ async function printReceipt(r){
 }
 function receiptText(r){
   const line='----------------------------------------';
-  const rows=[]; rows.push(r.business||'SwiftTill POS'); if(r.branchName) rows.push(r.branchName); if(r.address) rows.push(r.address); if(r.phone) rows.push(r.phone); rows.push(line); rows.push(`Bill No: #${r.number}`); rows.push(new Date(r.date).toLocaleString()); rows.push(`Order: ${formatType(r.type)}`); if(r.table) rows.push(`Table: ${r.table}${r.guests?' / '+r.guests+' guests':''}`); if(r.orderTaker) rows.push(`Taker: ${r.orderTaker}`); if(r.cashier) rows.push(`Cashier: ${r.cashier}`); rows.push(line); for(const l of (r.lines||[])){ rows.push(`${l.name} x${l.qty}  ${money(((l.price||0)+(l.modifiers||[]).reduce((a,m)=>a+Number(m.price||0),0))*l.qty)}`); for(const m of (l.modifiers||[])) rows.push(` + ${m.name} ${money(m.price*l.qty)}`); if(l.note) rows.push(` Note: ${l.note}`); } rows.push(line); rows.push(`Subtotal: ${money(r.totals.subtotal)}`); if(Number(r.totals.deliveryFee||0)>0) rows.push(`Delivery: ${money(r.totals.deliveryFee)}`); rows.push(`Discount: ${money(r.totals.discount)}`); rows.push(`TOTAL: ${money(r.totals.total)}`); rows.push(line); for(const p of (r.payments||[])){ rows.push(`${p.method}: ${money(p.amount)}`); if(p.received&&p.received!==p.amount) rows.push(`Received: ${money(p.received)}`); if(p.change) rows.push(`Change: ${money(p.change)}`); } rows.push(line); rows.push(r.footer||'Thank you'); return rows.join('\n');
+  const rows=[]; rows.push(r.business||'SwiftTill POS'); if(r.branchName) rows.push(r.branchName); if(r.address) rows.push(r.address); if(r.phone) rows.push(r.phone); rows.push(line); rows.push(`Bill No: #${r.number}`); if(r.unpaid) rows.push('Status: UNPAID'); rows.push(new Date(r.date).toLocaleString()); rows.push(`Order: ${formatType(r.type)}`); if(r.table) rows.push(`Table: ${r.table}${r.guests?' / '+r.guests+' guests':''}`); if(r.orderTaker) rows.push(`Taker: ${r.orderTaker}`); if(r.cashier) rows.push(`Cashier: ${r.cashier}`); rows.push(line); for(const l of (r.lines||[])){ rows.push(`${l.name} x${l.qty}  ${money(((l.price||0)+(l.modifiers||[]).reduce((a,m)=>a+Number(m.price||0),0))*l.qty)}`); for(const m of (l.modifiers||[])) rows.push(` + ${m.name} ${money(m.price*l.qty)}`); if(l.note) rows.push(` Note: ${l.note}`); } rows.push(line); rows.push(`Subtotal: ${money(r.totals.subtotal)}`); if(Number(r.totals.deliveryFee||0)>0) rows.push(`Delivery: ${money(r.totals.deliveryFee)}`); rows.push(`Discount: ${money(r.totals.discount)}`); rows.push(`TOTAL: ${money(r.totals.total)}`); rows.push(line); for(const p of (r.payments||[])){ rows.push(`${p.method}: ${money(p.amount)}`); if(p.received&&p.received!==p.amount) rows.push(`Received: ${money(p.received)}`); if(p.change) rows.push(`Change: ${money(p.change)}`); } rows.push(line); rows.push(r.footer||'Thank you'); return rows.join('\n');
 }
 function receiptHTML(r){
   const width = r.receiptWidth || state?.settings?.receiptWidth || '80mm';
@@ -297,7 +330,7 @@ function receiptHTML(r){
   const cashier = r.showCashierOnReceipt && r.cashier ? `<div class="r"><span>Cashier</span><span>${esc(r.cashier)}</span></div>` : '';
   const logo = r.showLogoOnReceipt && r.logoUrl ? `<img class="receipt-logo" src="${esc(r.logoUrl)}" alt="">` : '';
   const payments = r.showPaymentBreakdown === false ? '' : (r.payments||[]).map(p=>`<div class="r"><span>${esc(p.method)}</span><span>${money(p.amount)}</span></div>${p.received&&p.received!==p.amount?`<div class="r sub"><span>Received</span><span>${money(p.received)}</span></div>`:''}${p.change?`<div class="r sub"><span>Change</span><span>${money(p.change)}</span></div>`:''}`).join('');
-  return `<div class="receipt ${width==='58mm'?'narrow':''}">${logo}<h3>${esc(r.business)}</h3><div class="c">${esc(r.branchName||'')}</div><div class="c">${esc(r.header||'')}</div><div class="c">${esc(r.address||'')}<br>${esc(r.phone||'')}</div><div class="sep"></div><div class="r"><span>Bill No</span><span>#${esc(r.number)}</span></div><div class="r"><span>Date</span><span>${new Date(r.date).toLocaleString()}</span></div><div class="r"><span>Order</span><span>${formatType(r.type)}</span></div>${r.table?`<div class="r"><span>Table</span><span>${esc(r.table)}${r.guests?` / ${r.guests} guests`:''}</span></div>`:''}${customer}${orderTaker}${cashier}<div class="sep"></div>${lines}<div class="sep"></div><div class="r"><span>Subtotal</span><span>${money(r.totals.subtotal)}</span></div>${Number(r.totals.deliveryFee||0)>0?`<div class="r"><span>Delivery</span><span>${money(r.totals.deliveryFee)}</span></div>`:''}<div class="r"><span>Discount</span><span>${money(r.totals.discount)}</span></div><div class="r total"><b>Total</b><b>${money(r.totals.total)}</b></div><div class="sep"></div>${payments}<div class="sep"></div><div class="c">${esc(r.footer||'Thank you')}</div></div>`;
+  return `<div class="receipt ${width==='58mm'?'narrow':''}">${logo}<h3>${esc(r.business)}</h3><div class="c">${esc(r.branchName||'')}</div><div class="c">${esc(r.header||'')}</div><div class="c">${esc(r.address||'')}<br>${esc(r.phone||'')}</div><div class="sep"></div><div class="r"><span>Bill No</span><span>#${esc(r.number)}</span></div>${r.unpaid?'<div class="r"><span>Status</span><span>UNPAID</span></div>':''}<div class="r"><span>Date</span><span>${new Date(r.date).toLocaleString()}</span></div><div class="r"><span>Order</span><span>${formatType(r.type)}</span></div>${r.table?`<div class="r"><span>Table</span><span>${esc(r.table)}${r.guests?` / ${r.guests} guests`:''}</span></div>`:''}${customer}${orderTaker}${cashier}<div class="sep"></div>${lines}<div class="sep"></div><div class="r"><span>Subtotal</span><span>${money(r.totals.subtotal)}</span></div>${Number(r.totals.deliveryFee||0)>0?`<div class="r"><span>Delivery</span><span>${money(r.totals.deliveryFee)}</span></div>`:''}<div class="r"><span>Discount</span><span>${money(r.totals.discount)}</span></div><div class="r total"><b>Total</b><b>${money(r.totals.total)}</b></div><div class="sep"></div>${payments}<div class="sep"></div><div class="c">${esc(r.footer||'Thank you')}</div></div>`;
 }
 function openOpenShift(){ openModal(`<div class="modal-head"><h2>Open Shift</h2><button class="x" onclick="closeModal()">×</button></div><div class="field"><label>Opening Cash</label><input id="openingCash" type="number" value="5000"></div><button class="primary-btn" style="width:100%" id="doOpenShift">Start Shift</button>`); $('#doOpenShift').onclick=async()=>{try{await api('/api/shift/open',{openingCash:Number($('#openingCash').value||0)});closeModal();await loadState();renderShell();toast('Shift opened');}catch(e){toast(e.message,true);}}; }
 function openCloseShift(){ openModal(`<div class="modal-head"><h2>Close Shift</h2><button class="x" onclick="closeModal()">×</button></div><p class="muted-note">Count physical cash and close the active shift.</p><div class="field"><label>Counted Cash</label><input id="countedCash" type="number" value="0"></div><button class="primary-btn" style="width:100%" id="doCloseShift">Close Shift</button>`); $('#doCloseShift').onclick=async()=>{try{const j=await api('/api/shift/close',{countedCash:Number($('#countedCash').value||0)});closeModal();await loadState();renderShell();toast(`Shift closed. Difference ${money(j.shift.difference)}`);}catch(e){toast(e.message,true);}}; }
@@ -343,8 +376,11 @@ function reportQuery(){
   return params.toString();
 }
 async function loadReport(){
+  const target=$('#reportResult');
+  if(target) target.innerHTML='<div class="empty-cart"><b>Loading report...</b><p>Reading paid bills from Neon.</p></div>';
   try{
     const j=await api(`/api/reports?${reportQuery()}`,null,'GET'); const r=j.data;
+    if(!$('#reportResult')) return;
     $('#reportResult').innerHTML=`<div id="printReportArea" class="report-print-wrap">
     <div class="report-brand"><div><h2>${esc(state.settings.businessName)}</h2><p>${esc(state.settings.address||'')} ${state.settings.phone?'• '+esc(state.settings.phone):''}</p></div><b>${esc(state.settings.reportTitle||'Sales Report')}</b></div>
     <div class="report-grid" id="report-section-sales">
@@ -366,7 +402,7 @@ async function loadReport(){
     <div class="card subcard mt" id="report-section-items"><h3>Item Wise</h3><div class="report-table-wrap"><table class="admin-table"><thead><tr><th>Item</th><th>Category</th><th>Qty</th><th>Sales</th></tr></thead><tbody>${r.itemWise.map(i=>`<tr><td>${esc(i.item)}</td><td>${esc(i.category||'')}</td><td>${i.qty}</td><td>${money(i.sales)}</td></tr>`).join('')||'<tr><td colspan="4">No sales.</td></tr>'}</tbody></table></div></div>
     <div class="card subcard mt"><h3>Bill Details</h3><div class="report-table-wrap"><table class="admin-table"><thead><tr><th>Bill</th><th>Date</th><th>Type</th><th>Table</th><th>Customer</th><th>Order Taker</th><th>Cashier</th><th>Discount</th><th>Total</th><th>Payments</th></tr></thead><tbody>${r.orders.map(o=>`<tr><td>#${esc(o.number)}</td><td>${new Date(o.date).toLocaleString()}</td><td>${formatType(o.type)}</td><td>${esc(o.table)}</td><td>${esc(o.customer||o.mobile||'')}</td><td>${esc(o.orderTaker)}</td><td>${esc(o.cashier)}</td><td>${money(o.discount)}</td><td>${money(o.total)}</td><td>${esc(o.payments)}</td></tr>`).join('')||'<tr><td colspan="10">No bills.</td></tr>'}</tbody></table></div></div>
     <p class="report-footer">${esc(state.settings.reportFooter||'Generated by SwiftTill POS')}</p></div>`;
-  }catch(e){toast(e.message,true);}
+  }catch(e){ const target=$('#reportResult'); if(target) target.innerHTML=`<div class="empty-cart error-state"><b>Report failed</b><p>${esc(e.message)}</p></div>`; toast(e.message,true);}
 }
 function renderAdmin(ws){
   const tabs=['dashboard','reports','paid','categories','items','deals','tables','takers','payments','users','roles','settings'];
@@ -433,7 +469,7 @@ function renderSettings(c){
     <div class="card subcard"><h3>Printer / Report</h3>${input('printerName','Printer Name',s.printerName||'Windows Default Printer')}${input('localAgentUrl','Local Print Agent URL',s.localAgentUrl||'http://127.0.0.1:9721/print')}${input('defaultDeliveryFee','Default Delivery Fee',s.defaultDeliveryFee,'number')}${input('managerPin','Manager PIN',s.managerPin)}${input('reportTitle','Report Title',s.reportTitle||'Sales Report')}${input('reportFooter','Report Footer',s.reportFooter||'Generated by SwiftTill POS')}<label class="check mb"><input type="checkbox" name="autoPrintReceipt" ${s.autoPrintReceipt?'checked':''}> Auto print receipt</label><label class="check mb"><input type="checkbox" name="rememberPrintChoice" ${s.rememberPrintChoice?'checked':''}> Remember print choice</label><label class="check mb"><input type="checkbox" name="reportShowBranding" ${s.reportShowBranding?'checked':''}> Show branding on reports</label></div>
     <div class="settings-save"><button class="primary-btn">Save Company & Format Settings</button></div>
   </form>`;
-  $('#receiptPreviewBtn').onclick=()=>{ const latest=(state.paidOrders&&state.paidOrders[0]) || (currentOrder&&currentOrder.lines&&currentOrder.lines.length?currentOrder:null); if(!latest) return toast('No real order available for receipt preview. Create or open an order first.', true); $('#printArea').innerHTML=receiptHTML(receiptFromOrder(latest)); window.print(); };
+  $('#receiptPreviewBtn').onclick=()=>{ const latest=(state.paidOrders&&state.paidOrders[0]) || (currentOrder&&currentOrder.lines&&currentOrder.lines.length?currentOrder:null); if(!latest) return toast('No real order available for receipt preview. Create or open an order first.', true); ensurePrintArea().innerHTML=receiptHTML(receiptFromOrder(latest)); setTimeout(()=>window.print(),120); };
   $('#settingsForm').onsubmit=async e=>{e.preventDefault();const fd=new FormData(e.target);const data=Object.fromEntries(fd);['autoPrintReceipt','rememberPrintChoice','showLogoOnReceipt','showCustomerOnReceipt','showOrderTakerOnReceipt','showCashierOnReceipt','showPaymentBreakdown','reportShowBranding'].forEach(k=>data[k]=fd.has(k));['defaultDeliveryFee','receiptCopies'].forEach(k=>{data[k]=Number(data[k]||0)});try{ const file=fd.get('uploadFile'); if(file && file.size){ data.logoUrl = await uploadFile(file, 'logo'); } else if(data.imageUrl){ data.logoUrl = data.imageUrl; } delete data.uploadFile; delete data.imageUrl; await api('/api/admin/settings',data);await loadState();renderShell();toast('Settings saved');}catch(err){toast(err.message,true);}};
 }
 function renderCloud(c){

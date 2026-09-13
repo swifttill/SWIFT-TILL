@@ -225,3 +225,8 @@ Fixes live POS issues reported after V14:
 - Adds lightweight fast cloud-save indicator instead of heavy full-screen freeze.
 - Removes hardcoded login logo image fallback; runtime uses real Admin Settings logo/brand.
 - Updates Cloud/R2 status wording to production-connected.
+
+
+## Phase 17
+
+Print/report operational fixes: unpaid bill print, safe print area, browser/agent receipt fallback, and visible report loading/error states.
