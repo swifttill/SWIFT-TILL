@@ -1,8 +1,5 @@
-SwiftTill POS V18 validation
-
-API syntax: PASS
-Web JS syntax: PASS
-R2/storage syntax: PASS
-Auth smoke test: PASS
-Backup/history/media cleanup code: PASS
-ZIP integrity: PASS
+API syntax PASS
+Web JS syntax PASS
+Print agent syntax PASS
+Auth smoke test PASS
+ZIP integrity PASS

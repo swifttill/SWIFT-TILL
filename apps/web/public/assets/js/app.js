@@ -72,21 +72,50 @@ function renderLogin(){
     <div class="field"><label>Email</label><input name="email" value="admin@swifttill.local" autocomplete="username"></div>
     <div class="field"><label>Password</label><input name="password" value="admin123" type="password" autocomplete="current-password"></div>
     <button class="primary-btn" style="width:100%">Login</button>
-    <p class="muted-note">Admin: admin@swifttill.local / admin123<br>Manager: manager@swifttill.local / manager123<br>Cashier: cashier@swifttill.local / cashier123</p>
+    <p class="muted-note">First login: admin@swifttill.local / admin123<br>Change default password from Admin → Setup after first login.</p>
   </form></div>`;
   $('#loginForm').addEventListener('submit', async e => { e.preventDefault(); const f = new FormData(e.target); try{ const j = await api('/api/login', Object.fromEntries(f)); token = j.token; localStorage.setItem('swifttill_token', token); await boot(); }catch(err){ toast(err.message,true); } });
 }
+function setupBanner(){
+  const s=state?.setup; if(!s || s.complete) return '';
+  const labels={businessName:'Business name',branchName:'Branch name',categories:'Categories',pricedMenuItems:'Priced menu items',tables:'Tables',orderTakers:'Order takers',changeDefaultAdminPassword:'Change default admin password'};
+  return `<div class="setup-banner"><div><b>Setup required before rush-hour use</b><p>${s.missing.map(x=>labels[x]||x).join(' • ')}</p></div><button class="primary-btn" onclick="screen='admin';adminTab='setup';renderShell();">Complete Setup</button></div>`;
+}
+function openChangePasswordModal(){
+  openModal(`<div class="modal-head"><h2>Change Password</h2><button class="x" onclick="closeModal()">×</button></div><div class="field"><label>Current Password</label><input id="curPass" type="password"></div><div class="field"><label>New Password</label><input id="newPass" type="password" minlength="6"></div><button class="primary-btn" style="width:100%" id="doChangePass">Update Password</button>`);
+  $('#doChangePass').onclick=async()=>{try{await api('/api/account/change-password',{currentPassword:$('#curPass').value,newPassword:$('#newPass').value});closeModal();await loadState();renderShell();toast('Password updated');}catch(e){toast(e.message,true)}};
+}
+async function testPrintAgent(){
+  try{
+    const j=await api('/api/print-agent/sample',null,'GET');
+    const html=receiptHTML(j.receipt);
+    const agent=(state.settings.localAgentUrl||'http://127.0.0.1:9721/print').replace(/\\/g,'/');
+    const res=await fetch(agent,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({html,text:'SwiftTill print agent test receipt'})});
+    const out=await res.json().catch(()=>({ok:false,error:'Invalid print-agent response'}));
+    if(!res.ok||out.ok===false) throw new Error(out.error||'Print agent failed');
+    toast(out.printed?'Print agent sent to printer':'Print agent spooled test receipt');
+  }catch(e){
+    ensurePrintArea().innerHTML=receiptHTML({business:state.settings.businessName||'SwiftTill POS',number:'TEST',date:new Date().toISOString(),lines:[{name:'Browser fallback print test',qty:1,price:1}],totals:{subtotal:1,discount:0,deliveryFee:0,total:1},payments:[],unpaid:true});
+    toast('Print agent unavailable. Browser print fallback opened.', true);
+    setTimeout(()=>window.print(),120);
+  }
+}
+function renderSetup(c){
+  const s=state.setup||{missing:[]}; const ck=s.checklist||{};
+  c.innerHTML=`<div class="module-title"><div><h3>Restaurant Setup</h3><p class="muted-note">Complete these once before real restaurant rush-hour use.</p></div></div><div class="grid2 setup-grid"><div class="card subcard"><h3>Setup Checklist</h3>${['businessProfile','categories','menuPriced','tables','orderTakers','passwordChanged'].map(k=>`<p class="setup-line ${ck[k]?'ok-text':'danger-text'}">${ck[k]?'✓':'!'} ${esc(k.replace(/([A-Z])/g,' $1'))}</p>`).join('')}<p><b>Status:</b> ${s.complete?'Ready for operation':'Incomplete setup'}</p></div><div class="card subcard"><h3>Quick Actions</h3><button class="ghost-btn" onclick="adminTab='settings';renderAdminContent()">Company / Logo / Receipt</button><button class="ghost-btn" onclick="adminTab='categories';renderAdminContent()">Categories</button><button class="ghost-btn" onclick="adminTab='items';renderAdminContent()">Menu Items + Prices</button><button class="ghost-btn" onclick="adminTab='tables';renderAdminContent()">Tables</button><button class="ghost-btn" onclick="adminTab='takers';renderAdminContent()">Order Takers</button><button class="primary-btn" onclick="openChangePasswordModal()">Change Password</button></div><div class="card subcard"><h3>Print Agent</h3><p>Local URL: <b>${esc(state.printAgent?.localAgentUrl||state.settings.localAgentUrl||'')}</b></p><button class="primary-btn" onclick="testPrintAgent()">Test Print Agent</button><p class="muted-note">If local agent is not running, browser print fallback opens.</p></div></div>`;
+}
+
 function renderShell(){
   if(screen === 'admin') return renderAdminShell();
   app.innerHTML = `<div class="app-shell">
-    <aside class="panel sidebar">${renderSidebar()}</aside>
-    <main class="main"><section class="panel topbar">${renderTopbar()}</section><section class="panel workspace" id="workspace"></section></main>
+    <aside class="panel sidebar">${renderSidebar()}</aside>${setupBanner()}
+    <main class="main">${setupBanner()}<section class="panel topbar">${renderTopbar()}</section><section class="panel workspace" id="workspace"></section></main>
     <aside class="right-rail"><div class="panel rail-nav">${renderRailNav()}</div><section class="panel bill" id="billPanel"></section></aside>
   </div><div id="modalRoot"></div>`;
   bindSidebar(); bindRailNav(); renderWorkspace(); renderBill();
 }
 function renderAdminShell(){
-  app.innerHTML = `<div class="admin-screen"><section class="panel topbar">${renderTopbar()}<div class="admin-top-actions"><button class="ghost-btn" id="backPosBtn">Back to POS</button></div></section><section class="panel admin-page" id="workspace"></section></div><div id="modalRoot"></div>`;
+  app.innerHTML = `<div class="admin-screen">${setupBanner()}<section class="panel topbar">${renderTopbar()}<div class="admin-top-actions"><button class="ghost-btn" id="backPosBtn">Back to POS</button></div></section><section class="panel admin-page" id="workspace"></section></div><div id="modalRoot"></div>`;
   $('#backPosBtn').onclick = () => { screen='pos'; renderShell(); };
   $('#logoutBtn') && ($('#logoutBtn').onclick = logout);
   $('#shiftBtn') && ($('#shiftBtn').onclick = () => state.activeShift ? openCloseShift() : openOpenShift());
@@ -409,15 +438,16 @@ async function loadReport(){
   }catch(e){ const target=$('#reportResult'); if(target) target.innerHTML=`<div class="empty-cart error-state"><b>Report failed</b><p>${esc(e.message)}</p></div>`; toast(e.message,true);}
 }
 function renderAdmin(ws){
-  const tabs=['dashboard','reports','paid','categories','items','deals','tables','takers','payments','users','roles','settings','cloud','backup'];
+  const tabs=['dashboard','setup','reports','paid','categories','items','deals','tables','takers','payments','users','roles','settings','cloud','backup'];
   ws.innerHTML=`<div class="admin-layout"><div class="panel admin-nav">${tabs.map(t=>`<button class="${adminTab===t?'active':''}" data-admin-tab="${t}">${labelTab(t)}</button>`).join('')}</div><div class="panel admin-content" id="adminContent"></div></div>`;
   $$('[data-admin-tab]').forEach(b=>b.onclick=()=>{adminTab=b.dataset.adminTab;renderAdmin(ws);});
   renderAdminContent();
 }
-function labelTab(t){ return ({takers:'Order Takers',roles:'Roles & Permissions',settings:'Company / Branding',payments:'Payment Methods',paid:'Paid Orders',backup:'Backup / History',cloud:'Cloud / R2'}[t] || t[0].toUpperCase()+t.slice(1)); }
+function labelTab(t){ return ({setup:'Restaurant Setup',takers:'Order Takers',roles:'Roles & Permissions',settings:'Company / Branding',payments:'Payment Methods',paid:'Paid Orders',backup:'Backup / History',cloud:'Cloud / R2'}[t] || t[0].toUpperCase()+t.slice(1)); }
 function renderAdminContent(){
   const c=$('#adminContent');
   if(adminTab==='dashboard') return c.innerHTML=`<div class="admin-hero"><div class="admin-hero-title"><h3>Admin Dashboard</h3><p>Control menu, users, reports, company branding and receipt/printer settings.</p></div></div><div class="report-grid"><div class="card metric"><p>Categories</p><h3>${state.categories.length}</h3></div><div class="card metric"><p>Menu Items</p><h3>${state.items.length}</h3></div><div class="card metric"><p>Tables</p><h3>${state.tables.length}</h3></div><div class="card metric"><p>Open Orders</p><h3>${state.openOrders.length}</h3></div><div class="card metric"><p>Users</p><h3>${state.users.length}</h3></div><div class="card metric"><p>Roles</p><h3>${state.roles.length}</h3></div></div><div class="card subcard mt"><h3>Recent Audit</h3>${state.auditLogs.map(a=>`<p><b>${esc(a.action)}</b> — ${esc(a.userName)} — ${new Date(a.createdAt).toLocaleString()}</p>`).join('') || '<p>No audit yet.</p>'}</div>`;
+  if(adminTab==='setup') return renderSetup(c);
   if(adminTab==='reports') return renderReports(c);
   if(adminTab==='paid') return renderPaidOrders(c);
   if(adminTab==='categories') return adminList(c,'categories','category',['name','sort','active']);
@@ -469,10 +499,11 @@ function renderSettings(c){
   c.innerHTML=`<div class="module-title"><div><h3>Company, Branding, Receipt & Printer</h3><p class="muted-note">Manage restaurant profile, branch, receipt layout, report header and local print-agent settings.</p></div></div><form id="settingsForm" class="settings-layout">
     <div class="card subcard"><h3>Organization / Company</h3>${input('businessName','Display Business Name',s.businessName)}${input('legalName','Legal / Organization Name',s.legalName||s.businessName)}${input('branchName','Branch Name',s.branchName)}${input('branchCode','Branch Code',s.branchCode||'MAIN')}${input('phone','Phone / Contact',s.phone)}${input('email','Email',s.email||'')}${input('website','Website',s.website||'')}${input('city','City',s.city||'')}${input('country','Country',s.country||'Pakistan')}<div class="field"><label>Complete Address</label><textarea name="address" rows="3">${esc(s.address||'')}</textarea></div></div>
     <div class="card subcard"><h3>Branding</h3>${imageField(s.logoUrl)}<p class="muted-note">Logo is used on admin, receipt preview and future cloud/customer reports.</p>${input('currency','Currency',s.currency||'PKR')}</div>
-    <div class="card subcard"><h3>Receipt Format</h3>${select('receiptWidth','Thermal Paper Width',s.receiptWidth||'80mm',[['80mm','80mm'],['58mm','58mm']])}${input('receiptCopies','Receipt Copies',s.receiptCopies||1,'number')}${input('receiptHeader','Receipt Header',s.receiptHeader)}${input('receiptFooter','Receipt Footer',s.receiptFooter)}<label class="check mb"><input type="checkbox" name="showLogoOnReceipt" ${s.showLogoOnReceipt?'checked':''}> Show logo on receipt</label><label class="check mb"><input type="checkbox" name="showCustomerOnReceipt" ${s.showCustomerOnReceipt?'checked':''}> Show customer details</label><label class="check mb"><input type="checkbox" name="showOrderTakerOnReceipt" ${s.showOrderTakerOnReceipt?'checked':''}> Show order taker</label><label class="check mb"><input type="checkbox" name="showCashierOnReceipt" ${s.showCashierOnReceipt?'checked':''}> Show cashier</label><label class="check mb"><input type="checkbox" name="showPaymentBreakdown" ${s.showPaymentBreakdown?'checked':''}> Show payment breakdown</label><button type="button" class="ghost-btn" id="receiptPreviewBtn">Preview Receipt</button></div>
+    <div class="card subcard"><h3>Receipt Format</h3>${select('receiptWidth','Thermal Paper Width',s.receiptWidth||'80mm',[['80mm','80mm'],['58mm','58mm']])}${input('receiptCopies','Receipt Copies',s.receiptCopies||1,'number')}${input('receiptHeader','Receipt Header',s.receiptHeader)}${input('receiptFooter','Receipt Footer',s.receiptFooter)}<label class="check mb"><input type="checkbox" name="showLogoOnReceipt" ${s.showLogoOnReceipt?'checked':''}> Show logo on receipt</label><label class="check mb"><input type="checkbox" name="showCustomerOnReceipt" ${s.showCustomerOnReceipt?'checked':''}> Show customer details</label><label class="check mb"><input type="checkbox" name="showOrderTakerOnReceipt" ${s.showOrderTakerOnReceipt?'checked':''}> Show order taker</label><label class="check mb"><input type="checkbox" name="showCashierOnReceipt" ${s.showCashierOnReceipt?'checked':''}> Show cashier</label><label class="check mb"><input type="checkbox" name="showPaymentBreakdown" ${s.showPaymentBreakdown?'checked':''}> Show payment breakdown</label><button type="button" class="ghost-btn" id="receiptPreviewBtn">Preview Receipt</button><button type="button" class="ghost-btn" id="testPrintAgentBtn">Test Print Agent</button><button type="button" class="ghost-btn" id="changePasswordBtn">Change Password</button></div>
     <div class="card subcard"><h3>Printer / Report</h3>${input('printerName','Printer Name',s.printerName||'Windows Default Printer')}${input('localAgentUrl','Local Print Agent URL',s.localAgentUrl||'http://127.0.0.1:9721/print')}${input('defaultDeliveryFee','Default Delivery Fee',s.defaultDeliveryFee,'number')}${input('managerPin','Manager PIN',s.managerPin)}${input('reportTitle','Report Title',s.reportTitle||'Sales Report')}${input('reportFooter','Report Footer',s.reportFooter||'Generated by SwiftTill POS')}<label class="check mb"><input type="checkbox" name="autoPrintReceipt" ${s.autoPrintReceipt?'checked':''}> Auto print receipt</label><label class="check mb"><input type="checkbox" name="rememberPrintChoice" ${s.rememberPrintChoice?'checked':''}> Remember print choice</label><label class="check mb"><input type="checkbox" name="reportShowBranding" ${s.reportShowBranding?'checked':''}> Show branding on reports</label></div>
     <div class="settings-save"><button class="primary-btn">Save Company & Format Settings</button></div>
   </form>`;
+  $('#testPrintAgentBtn') && ($('#testPrintAgentBtn').onclick=()=>testPrintAgent()); $('#changePasswordBtn') && ($('#changePasswordBtn').onclick=()=>openChangePasswordModal());
   $('#receiptPreviewBtn').onclick=()=>{ const latest=(state.paidOrders&&state.paidOrders[0]) || (currentOrder&&currentOrder.lines&&currentOrder.lines.length?currentOrder:null); if(!latest) return toast('No real order available for receipt preview. Create or open an order first.', true); ensurePrintArea().innerHTML=receiptHTML(receiptFromOrder(latest)); setTimeout(()=>window.print(),120); };
   $('#settingsForm').onsubmit=async e=>{e.preventDefault();const fd=new FormData(e.target);const data=Object.fromEntries(fd);['autoPrintReceipt','rememberPrintChoice','showLogoOnReceipt','showCustomerOnReceipt','showOrderTakerOnReceipt','showCashierOnReceipt','showPaymentBreakdown','reportShowBranding'].forEach(k=>data[k]=fd.has(k));['defaultDeliveryFee','receiptCopies'].forEach(k=>{data[k]=Number(data[k]||0)});try{ const file=fd.get('uploadFile'); if(file && file.size){ data.logoUrl = await uploadFile(file, 'logo'); } else if(data.imageUrl){ data.logoUrl = data.imageUrl; } delete data.uploadFile; delete data.imageUrl; await api('/api/admin/settings',data);await loadState();renderShell();toast('Settings saved');}catch(err){toast(err.message,true);}};
 }

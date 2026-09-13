@@ -1,8 +1,8 @@
 {
   "name": "swifttill-pos-monorepo",
-  "version": "18.0.0",
+  "version": "19.0.0",
   "private": true,
-  "description": "SwiftTill POS V18 backup, history retention and media cleanup for production Render/Neon/Cloudflare R2.",
+  "description": "SwiftTill POS V19 final hardening: restaurant setup checklist, password change and print-agent test.",
   "workspaces": [
     "apps/api",
     "apps/web",

@@ -16,7 +16,8 @@ function printWithWindowsDefault(file, cb){
 }
 async function handle(req,res){
   if(req.method==='OPTIONS') return json(res,204,{});
-  if(req.url==='/health') return json(res,200,{ ok:true, app:'SwiftTill Print Agent', mode:MODE, port:PORT });
+  if(req.url==='/health') return json(res,200,{ ok:true, app:'SwiftTill Print Agent', version:'19.0.0', mode:MODE, port:PORT, spool:SPOOL });
+  if(req.url==='/test' && req.method==='POST'){ req.url='/print'; }
   if(req.url==='/print' && req.method==='POST'){
     try{
       const body=await readBody(req); ensureDir(SPOOL);
