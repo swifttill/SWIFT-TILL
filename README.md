@@ -1,4 +1,4 @@
-# SwiftTill POS V31 — Final 360 Non-Testing Audit Fixes
+# SwiftTill POS V33 — Final 360 Non-Testing Audit Fixes
 
 This package applies a deep non-UI operational audit pass after V30. It keeps the modern POS/admin/report/branding work and hardens the remaining backend, history, security, print, backup and workflow rules before live QA.
 
@@ -165,3 +165,16 @@ This package adds a phone/tablet POS usability pass and closes the code-side not
 - final audit/status flags updated for mobile pilot readiness
 
 Remaining items after this phase are field-testing items only: real thermal printer test, dummy order day simulation, and final customer UI approval.
+
+
+## Phase 33 — R2 Media Lifecycle Hard Delete
+
+This phase fixes Cloudflare R2 media cleanup so the bucket does not keep old item/category/deal/logo files forever.
+
+- Replacing a category, item, deal or logo image deletes the previous R2 object when no live record still uses it.
+- Deleting a category, item or deal deletes its R2 image when no other live record uses it.
+- Paid order/report history remains safe because reports keep text/price/category snapshots, not live media dependencies.
+- Historical paid-order image references no longer block bucket cleanup.
+- Daily orphan cleanup scans managed media prefixes and deletes unreferenced R2 files.
+- Owner/admin endpoint added: POST /api/admin/media-cleanup.
+- Backups under swifttill/backups are not touched by media cleanup.

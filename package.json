@@ -1,8 +1,8 @@
 {
   "name": "swifttill-pos-monorepo",
-  "version": "32.0.0",
+  "version": "33.0.0",
   "private": true,
-  "description": "SwiftTill POS V32: mobile-friendly POS plus final noted code-side hardening for client pilot readiness.",
+  "description": "SwiftTill POS V33: R2 media lifecycle hard-delete on replace/delete with orphan media cleanup.",
   "workspaces": [
     "apps/api",
     "apps/web",

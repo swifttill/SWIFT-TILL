@@ -106,6 +106,41 @@ async function deleteObjectFromR2(key, env = process.env) {
   return { ok: true, key: cleanKey };
 }
 
+
+async function listObjectsFromR2({ prefix = '', maxKeys = 1000 } = {}, env = process.env) {
+  if (!hasR2Config(env)) return [];
+  const { ListObjectsV2Command } = require('@aws-sdk/client-s3');
+  const client = s3Client(env);
+  const objects = [];
+  let ContinuationToken;
+  do {
+    const result = await client.send(new ListObjectsV2Command({
+      Bucket: env.R2_BUCKET_NAME,
+      Prefix: String(prefix || ''),
+      MaxKeys: Math.min(Math.max(Number(maxKeys) || 1000, 1), 1000),
+      ContinuationToken
+    }));
+    for (const item of result.Contents || []) {
+      if (item && item.Key) objects.push({ key: item.Key, size: item.Size || 0, lastModified: item.LastModified || null });
+    }
+    ContinuationToken = result.IsTruncated ? result.NextContinuationToken : undefined;
+  } while (ContinuationToken);
+  return objects;
+}
+
+async function deleteObjectsFromR2(keys = [], env = process.env) {
+  const unique = [...new Set((keys || []).map(k => String(k || '').replace(/^\//, '')).filter(Boolean))];
+  const results = [];
+  for (const key of unique) {
+    try {
+      results.push(await deleteObjectFromR2(key, env));
+    } catch (e) {
+      results.push({ ok: false, key, error: e.message });
+    }
+  }
+  return { ok: results.every(r => r.ok || r.skipped), deleted: results.filter(r => r.ok).length, results };
+}
+
 module.exports = {
   hasR2Config,
   endpoint,
@@ -116,5 +151,7 @@ module.exports = {
   assertImage,
   uploadImageToR2,
   putJsonToR2,
-  deleteObjectFromR2
+  deleteObjectFromR2,
+  listObjectsFromR2,
+  deleteObjectsFromR2
 };
