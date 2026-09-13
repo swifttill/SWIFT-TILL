@@ -1,8 +1,8 @@
 {
   "name": "swifttill-pos-monorepo",
-  "version": "29.0.0",
+  "version": "30.0.0",
   "private": true,
-  "description": "SwiftTill POS V29: extreme right-cart compression, maximum bill item visibility, compact totals/actions and modern rush-hour POS density.",
+  "description": "SwiftTill POS V30: media image frame fix, admin category filters/sorting, login/favicon/header/bill/report branding polish.",
   "workspaces": [
     "apps/api",
     "apps/web",

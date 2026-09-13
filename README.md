@@ -86,7 +86,7 @@ Key changes:
 - Same-screen POS workflow remains: order, table/menu/deal selection, cart, hold/pay/print actions.
 - Admin panel gets a more professional back-office shell without exposing cloud credentials.
 
-Version: 29.0.0-extreme-cart-compression
+Version: 30.0.0-media-admin-filters-branding
 
 
 ## Phase 28 — Cart Density + Client Admin Cleanup
@@ -116,4 +116,12 @@ This phase tightens the right bill/cart panel again after real screenshot feedba
 - Print-after-payment label is shortened to save space.
 - No UI section is hidden incorrectly; only spacing is compressed.
 
-Version: 29.0.0-extreme-cart-compression
+Version: 30.0.0-media-admin-filters-branding
+
+
+## Phase 30 — Media, Admin Filters/Sorting and Branding
+
+- Fixed half-cropped item/card images with safe food image frames.
+- Added admin search, category filter and sorting to lists, especially Menu Items.
+- Added SwiftTill favicon/browser tab icon and PWA icons.
+- Added branded login background, company logo in header and SwiftTill footer branding for bills/reports.

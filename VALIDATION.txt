@@ -1,19 +1,8 @@
-SwiftTill POS V28 validation
-
+SwiftTill POS V30 validation
 API syntax: PASS
-Web JavaScript syntax: PASS
-DB client syntax: PASS
-DB adapter syntax: PASS
+Web JS syntax: PASS
 Auth smoke test: PASS
 Storage/R2 syntax: PASS
 Print agent syntax: PASS
-ZIP integrity: pending at packaging time
-
-Key fixes:
-- compact right bill panel
-- order detail compact grid
-- cart item area enlarged
-- total/actions compressed
-- three secondary bill actions on one line
-- client backup/create/download/restore controls hidden
-- automatic backup/history retained internally
+Favicon assets: PASS
+ZIP integrity: PASS

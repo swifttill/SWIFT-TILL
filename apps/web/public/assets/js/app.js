@@ -593,7 +593,7 @@ function renderSettings(c){
 function renderCloud(c){ c.innerHTML=`<div class="card subcard"><h3>Cloud settings hidden</h3><p class="muted-note">Render, Neon and Cloudflare credentials are owner/developer settings and are not shown to restaurant staff.</p></div>`; }
 function renderBackup(c){ const b=state.backup||{}; c.innerHTML=`<div class="module-title"><div><h3>Backup, History & Retention</h3><p class="muted-note">Orders/reports history stays in Neon. Daily backup snapshots use Cloudflare R2 when configured.</p></div></div><div class="grid2"><div class="card subcard"><h3>Backup Status</h3><p>Mode: <b>${esc(b.mode||'cloud/database')}</b></p><p>Backups indexed: <b>${b.total||0}</b></p><p>Daily retention: <b>${b.dailyRetentionDays||30} days</b></p><p>Monthly retention: <b>${b.monthlyRetentionMonths||12} months</b></p><p>Latest: <b>${b.latest?new Date(b.latest.exportedAt).toLocaleString():'Not created yet'}</b></p><button class="ghost-btn" id="refreshBackupStatus">Refresh Status</button></div><div class="card subcard"><h3>Create Backup</h3><p class="muted-note">Creates a R2 JSON backup if R2 is configured and also indexes it in Neon state.</p><button class="primary-btn" id="createBackup">Create Cloud Backup</button><button class="ghost-btn mt" id="downloadBackup">Download Backup JSON</button></div><div class="card subcard"><h3>Restore Backup</h3><p class="muted-note">Use only with a SwiftTill backup JSON file. Paid order history is restored exactly from file.</p><input type="file" id="restoreFile" accept="application/json"><button class="danger-btn mt" id="restoreBtn">Restore</button></div><div class="card subcard"><h3>History Rule</h3><p>Deleting menu item/category/deal removes it from live menu only.</p><p>Old paid bills and reports keep line name, price and category snapshot.</p><p>Replacing/deleting media removes old R2 object when it is not reused.</p></div></div>`; $('#refreshBackupStatus').onclick=async()=>{try{const j=await api('/api/backup/status',null,'GET'); state.backup=j.backup; renderBackup(c);}catch(e){toast(e.message,true)}}; $('#createBackup').onclick=async()=>{try{const j=await api('/api/backup/create',{type:'manual'}); state.backup=j.summary; toast('Backup created'); renderBackup(c);}catch(e){toast(e.message,true)}}; $('#downloadBackup').onclick=()=>downloadApi('/api/backup/download',`swifttill-backup-${Date.now()}.json`).catch(e=>toast(e.message,true)); $('#restoreBtn').onclick=()=>{const file=$('#restoreFile').files[0];if(!file)return toast('Choose backup file',true);const r=new FileReader();r.onload=async()=>{try{await api('/api/backup/restore',JSON.parse(r.result));await loadState();renderShell();toast('Backup restored');}catch(e){toast(e.message,true)}};r.readAsText(file);}; }
 setInterval(refreshLiveTimers,1000);
-boot();
+// SwiftTill V30: boot delayed until all overrides are registered.
 
 /* V23 Professional POS Reports: rebuilt screen, totals, closeout layout and receipt-style print. */
 function currentReportTitle(){
@@ -1028,3 +1028,122 @@ renderBill = function(){
   const move=$('#moveTableBtn'); if(move && currentOrder.type==='DINE_IN') move.onclick=()=>openMoveTableModal();
   const split=$('#splitBillBtn'); if(split) split.onclick=()=>openSplitBillModal();
 };
+
+
+/* ============================================================
+   SwiftTill V30 Media + Admin Filters + Branding System
+   - safe food image frames, no half-cropped menu pictures
+   - admin category filter/search/sorting
+   - favicon/login/header/bill/report SwiftTill branding
+============================================================ */
+function productBrandMark(){
+  return `<img class="swifttill-product-mark" src="/assets/img/icon-192.png" alt="SwiftTill POS">`;
+}
+renderLogin = function(){
+  app.innerHTML = `<div class="login-screen v30-login-screen">
+    <div class="login-watermark">${productBrandMark()}</div>
+    <form class="login-card v30-login-card" id="loginForm">
+      <div class="login-brand-visual">${productBrandMark()}<b>SwiftTill</b><span>Cloud POS</span></div>
+      <h1>Sign in to POS</h1><p>Secure restaurant billing, reports and thermal printing workspace.</p>
+      <div class="field"><label>Email</label><input name="email" autocomplete="username" required></div>
+      <div class="field"><label>Password</label><input name="password" type="password" autocomplete="current-password" required></div>
+      <button class="primary-btn" style="width:100%">Login</button>
+      <p class="muted-note">Use credentials issued by the system owner.</p>
+    </form>
+  </div>`;
+  $('#loginForm').addEventListener('submit', async e => { e.preventDefault(); const f = new FormData(e.target); try{ const j = await api('/api/login', Object.fromEntries(f)); token = j.token; localStorage.setItem('swifttill_token', token); await boot(); }catch(err){ toast(err.message,true); } });
+};
+
+renderTopbar = function(){
+  const d = new Date(); const active = state.activeShift; const s = state.settings || {};
+  const logo = s.logoUrl ? `<img class="topbar-company-logo" src="${esc(s.logoUrl)}" alt="${esc(s.businessName || 'Company Logo')}">` : `<span class="topbar-company-logo text-logo">ST</span>`;
+  const back = screen === 'admin' ? `<button class="ghost-btn top-action back-pos-action" id="backPosBtn">← Back to POS</button>` : '';
+  return `<div class="hello v30-hello"><div class="topbar-brand-wrap">${logo}<div><h2>${esc(s.businessName || 'SwiftTill POS')}</h2><p>${screen==='admin'?'Back office controls, reports and setup.':'Fast billing workspace for active restaurant operations.'}</p></div></div></div>
+  <div class="top-items">
+    <div class="top-pill date-pill">📅 <span><b>${d.toLocaleDateString('en-GB',{weekday:'short',day:'2-digit',month:'short',year:'numeric'})}</b>${d.toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})}</span></div>
+    <div class="top-pill user-pill">👤 <span><b>${esc(state.user.name)}</b>${esc(state.user.roles.join(', ') || 'User')}</span></div>
+    <div class="top-pill branch-pill"><span class="status-dot"></span><span><b>${esc(s.branchName || 'Main Branch')}</b>System Online</span></div>
+    ${back}
+    <button class="ghost-btn shift-action" id="shiftBtn">${active?'Close Shift':'Open Shift'}</button>
+    <button class="ghost-btn logout-action" id="logoutBtn">Logout</button>
+  </div>`;
+};
+
+function adminListFilters(key){
+  window.swiftAdminListFilters ||= {};
+  window.swiftAdminListFilters[key] ||= { search:'', category:'', active:'all', sort:'sortAsc' };
+  return window.swiftAdminListFilters[key];
+}
+function adminListSortOptions(key){
+  const base=[['sortAsc','Sort order'],['nameAsc','Name A-Z'],['nameDesc','Name Z-A']];
+  if(key==='items'||key==='deals') base.push(['priceAsc','Price low-high'],['priceDesc','Price high-low']);
+  if(key==='items') base.push(['categoryAsc','Category']);
+  if(key==='tables') base.push(['seatsAsc','Seats low-high'],['seatsDesc','Seats high-low']);
+  base.push(['activeFirst','Active first'],['inactiveFirst','Inactive first']);
+  return base;
+}
+function adminListControls(key){
+  const f=adminListFilters(key);
+  const categoryControl = key==='items' ? `<div class="field admin-filter-field"><label>Category</label><select id="adminCategoryFilter"><option value="">All Categories</option>${(state.categories||[]).filter(c=>c.id!=='cat_all'&&c.id!=='all').map(c=>`<option value="${esc(c.id)}" ${f.category===c.id?'selected':''}>${esc(c.name)}</option>`).join('')}</select></div>` : '';
+  const activeControl = ['categories','items','deals','tables','orderTakers','paymentMethods','users','roles'].includes(key) ? `<div class="field admin-filter-field"><label>Status</label><select id="adminActiveFilter"><option value="all" ${f.active==='all'?'selected':''}>All</option><option value="active" ${f.active==='active'?'selected':''}>Active</option><option value="inactive" ${f.active==='inactive'?'selected':''}>Inactive</option></select></div>` : '';
+  return `<div class="admin-filterbar card"><div class="field admin-filter-field search-field"><label>Search</label><input id="adminSearchFilter" value="${esc(f.search)}" placeholder="Search ${esc(labelTab(key))}..."></div>${categoryControl}${activeControl}<div class="field admin-filter-field"><label>Sort By</label><select id="adminSortFilter">${adminListSortOptions(key).map(([v,l])=>`<option value="${v}" ${f.sort===v?'selected':''}>${l}</option>`).join('')}</select></div></div>`;
+}
+function adminApplyRows(key, rows){
+  const f=adminListFilters(key);
+  let out=[...rows];
+  const search=(f.search||'').trim().toLowerCase();
+  if(search) out=out.filter(r=>[r.name,r.email,r.description,r.categoryId,state.categories?.find(c=>c.id===r.categoryId)?.name].filter(Boolean).join(' ').toLowerCase().includes(search));
+  if(key==='items' && f.category) out=out.filter(r=>r.categoryId===f.category);
+  if(f.active==='active') out=out.filter(r=>r.active!==false);
+  if(f.active==='inactive') out=out.filter(r=>r.active===false);
+  const byName=(a,b)=>String(a.name||'').localeCompare(String(b.name||''));
+  const sort=f.sort || 'sortAsc';
+  out.sort((a,b)=>{
+    if(sort==='nameAsc') return byName(a,b);
+    if(sort==='nameDesc') return byName(b,a);
+    if(sort==='priceAsc') return Number(a.price||0)-Number(b.price||0);
+    if(sort==='priceDesc') return Number(b.price||0)-Number(a.price||0);
+    if(sort==='categoryAsc') return String(state.categories?.find(c=>c.id===a.categoryId)?.name||'').localeCompare(String(state.categories?.find(c=>c.id===b.categoryId)?.name||'')) || byName(a,b);
+    if(sort==='seatsAsc') return Number(a.seats||0)-Number(b.seats||0);
+    if(sort==='seatsDesc') return Number(b.seats||0)-Number(a.seats||0);
+    if(sort==='activeFirst') return (a.active===false)-(b.active===false) || byName(a,b);
+    if(sort==='inactiveFirst') return (b.active===false)-(a.active===false) || byName(a,b);
+    return Number(a.sort||9999)-Number(b.sort||9999) || byName(a,b);
+  });
+  return out;
+}
+function adminCell(r, f){
+  if(f==='price') return `<b>${Number(r[f]||0)>0?money(r[f]):'<span class="danger-text">Set price</span>'}</b>`;
+  if(f==='categoryId') return esc(state.categories.find(c=>c.id===r[f])?.name || r[f] || '');
+  if(f==='roleIds') return esc((r[f]||[]).map(id=>state.roles.find(x=>x.id===id)?.name||id).join(', '));
+  if(f==='permissions') return esc((r[f]||[]).length + ' permissions');
+  if(r[f]===true) return '<span class="status-chip ok">Active</span>';
+  if(r[f]===false) return '<span class="status-chip muted">Inactive</span>';
+  return esc(Array.isArray(r[f]) ? r[f].join(', ') : (r[f] ?? ''));
+}
+adminList = function(c,key,apiName,fields){
+  const allRows=state[key]||[]; const rows=adminApplyRows(key, allRows);
+  c.innerHTML=`<div class="admin-wrap v30-admin-list"><div class="module-title"><div><h3>${esc(labelTab(key))}</h3><p class="muted-note">${rows.length} shown from ${allRows.length}. Use filters and sorting for fast admin work.</p></div><button class="primary-btn" onclick="openAdminEditor('${apiName}')">Add New</button></div>${adminListControls(key)}<div class="report-table-wrap admin-table-shell"><table class="admin-table"><thead><tr><th>Image</th>${fields.map(f=>`<th>${esc(f==='categoryId'?'Category':f==='roleIds'?'Roles':f)}</th>`).join('')}<th>Action</th></tr></thead><tbody>${rows.map(r=>`<tr><td>${r.imageUrl?`<img class="thumb admin-thumb" src="${esc(r.imageUrl)}" alt="">`:''}</td>${fields.map(f=>`<td>${adminCell(r,f)}</td>`).join('')}<td><div class="row-actions"><button class="ghost-btn tiny" data-admin-edit="${esc(r.id)}">Edit</button><button class="danger-btn tiny" data-admin-delete="${esc(r.id)}">Delete</button></div></td></tr>`).join('') || `<tr><td colspan="${fields.length+2}" class="empty-td">No records match these filters.</td></tr>`}</tbody></table></div></div>`;
+  const f=adminListFilters(key);
+  $('#adminSearchFilter')?.addEventListener('input', e=>{ f.search=e.target.value; adminList(c,key,apiName,fields); });
+  $('#adminCategoryFilter')?.addEventListener('change', e=>{ f.category=e.target.value; adminList(c,key,apiName,fields); });
+  $('#adminActiveFilter')?.addEventListener('change', e=>{ f.active=e.target.value; adminList(c,key,apiName,fields); });
+  $('#adminSortFilter')?.addEventListener('change', e=>{ f.sort=e.target.value; adminList(c,key,apiName,fields); });
+  $$('[data-admin-edit]', c).forEach(b=>b.onclick=()=>{ const record=(state[key]||[]).find(x=>x.id===b.dataset.adminEdit); if(record) openAdminEditor(apiName, clone(record)); });
+  $$('[data-admin-delete]', c).forEach(b=>b.onclick=()=>deleteAdminRecord(apiName,b.dataset.adminDelete));
+};
+
+const __v30BaseReceiptHTML = receiptHTML;
+receiptHTML = function(r){
+  let html = __v30BaseReceiptHTML(r || {});
+  const brand = '<div class="sep"></div><div class="swifttill-powered">Powered by SwiftTill POS</div>';
+  return html.replace(/<\/div>\s*$/, `${brand}</div>`);
+};
+const __v30BaseRenderBill = renderBill;
+renderBill = function(){
+  __v30BaseRenderBill();
+  const bp=$('#billPanel');
+  if(bp && currentOrder){ bp.insertAdjacentHTML('beforeend','<div class="billing-brand-footer">SwiftTill POS</div>'); }
+};
+
+boot();
