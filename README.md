@@ -195,3 +195,8 @@ This package adds a client-facing operational UX hardening pass:
 - API endpoint `/api/ops/scenarios` added for live scenario readiness.
 
 Version: `34.0.0-mobile-reports-ops-audit`
+
+
+## Phase 35 — Original Logo Favicon Restore
+
+Restored browser/favicon/PWA icons from the original SwiftTill logo asset, with cache-busting links so the browser tab refreshes after deploy.
