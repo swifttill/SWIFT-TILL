@@ -13,6 +13,7 @@ let selectedOrderType = 'DINE_IN';
 let lastReceipt = null;
 let busyCount = 0;
 let lastActionAt = 0;
+let pendingActions = new Set();
 function ensurePrintArea(){
   const areas = $$('#printArea');
   const bodyArea = areas.find(x => x.parentElement === document.body);
@@ -26,6 +27,8 @@ function ensurePrintArea(){
 }
 function ensureBusyLayer(){ let el = document.getElementById('globalBusy'); if(!el){ el = document.createElement('div'); el.id='globalBusy'; el.innerHTML='<div class="busy-card"><div class="busy-bar"><span></span></div><b>Saving...</b><p>Real cloud save in progress.</p></div>'; document.body.appendChild(el); } return el; }
 function setBusy(on){ busyCount = Math.max(0, busyCount + (on ? 1 : -1)); const el = ensureBusyLayer(); el.classList.toggle('show', busyCount > 0); document.body.classList.toggle('is-busy', busyCount > 0); }
+function beginAction(key){ if(pendingActions.has(key)) return false; pendingActions.add(key); return true; }
+function endAction(key){ pendingActions.delete(key); }
 function hasOrderLines(o=currentOrder){ return Array.isArray(o?.lines) && o.lines.some(l => Number(l.qty||0) > 0); }
 function requireOrderLines(message='Add at least one item before continuing'){ if(!hasOrderLines()){ toast(message, true); return false; } return true; }
 function numericPrice(v){ return Math.round((Number(v)||0)*100)/100; }
@@ -358,10 +361,11 @@ function renderReports(ws){
       <label class="check"><input type="checkbox" id="discountOnly"> Discounted only</label>
       <label class="check"><input type="checkbox" id="refundOnly"> Refunded only</label>
     </div>
-    <button class="primary-btn" id="runReport">Run Report</button>
+    <button class="primary-btn" id="runReport">Run Report</button><button class="ghost-btn" id="lastMonthReport" type="button">Last 30 Days</button>
     <div id="reportResult" class="mt"></div>
   </div></div>`;
   $('#runReport').onclick=loadReport;
+  $('#lastMonthReport').onclick=()=>{ const d=new Date(); const to=d.toISOString().slice(0,10); d.setDate(d.getDate()-30); $('#fromDate').value=d.toISOString().slice(0,10); $('#toDate').value=to; loadReport(); };
   $('#exportReport').onclick=()=>downloadApi(`/api/export?${reportQuery()}`,`swifttill-report-${Date.now()}.csv`).catch(e=>toast(e.message,true));
   $('#printReportBtn').onclick=()=>printReportArea();
   $$('.report-tabs button').forEach(b=>b.onclick=()=>{$$('.report-tabs button').forEach(x=>x.classList.remove('active'));b.classList.add('active');const el=$(`#report-section-${b.dataset.reportTab}`); if(el) el.scrollIntoView({behavior:'smooth',block:'start'});});
@@ -405,12 +409,12 @@ async function loadReport(){
   }catch(e){ const target=$('#reportResult'); if(target) target.innerHTML=`<div class="empty-cart error-state"><b>Report failed</b><p>${esc(e.message)}</p></div>`; toast(e.message,true);}
 }
 function renderAdmin(ws){
-  const tabs=['dashboard','reports','paid','categories','items','deals','tables','takers','payments','users','roles','settings'];
+  const tabs=['dashboard','reports','paid','categories','items','deals','tables','takers','payments','users','roles','settings','cloud','backup'];
   ws.innerHTML=`<div class="admin-layout"><div class="panel admin-nav">${tabs.map(t=>`<button class="${adminTab===t?'active':''}" data-admin-tab="${t}">${labelTab(t)}</button>`).join('')}</div><div class="panel admin-content" id="adminContent"></div></div>`;
   $$('[data-admin-tab]').forEach(b=>b.onclick=()=>{adminTab=b.dataset.adminTab;renderAdmin(ws);});
   renderAdminContent();
 }
-function labelTab(t){ return ({takers:'Order Takers',roles:'Roles & Permissions',settings:'Company / Branding',payments:'Payment Methods',paid:'Paid Orders'}[t] || t[0].toUpperCase()+t.slice(1)); }
+function labelTab(t){ return ({takers:'Order Takers',roles:'Roles & Permissions',settings:'Company / Branding',payments:'Payment Methods',paid:'Paid Orders',backup:'Backup / History',cloud:'Cloud / R2'}[t] || t[0].toUpperCase()+t.slice(1)); }
 function renderAdminContent(){
   const c=$('#adminContent');
   if(adminTab==='dashboard') return c.innerHTML=`<div class="admin-hero"><div class="admin-hero-title"><h3>Admin Dashboard</h3><p>Control menu, users, reports, company branding and receipt/printer settings.</p></div></div><div class="report-grid"><div class="card metric"><p>Categories</p><h3>${state.categories.length}</h3></div><div class="card metric"><p>Menu Items</p><h3>${state.items.length}</h3></div><div class="card metric"><p>Tables</p><h3>${state.tables.length}</h3></div><div class="card metric"><p>Open Orders</p><h3>${state.openOrders.length}</h3></div><div class="card metric"><p>Users</p><h3>${state.users.length}</h3></div><div class="card metric"><p>Roles</p><h3>${state.roles.length}</h3></div></div><div class="card subcard mt"><h3>Recent Audit</h3>${state.auditLogs.map(a=>`<p><b>${esc(a.action)}</b> — ${esc(a.userName)} — ${new Date(a.createdAt).toLocaleString()}</p>`).join('') || '<p>No audit yet.</p>'}</div>`;
@@ -477,6 +481,6 @@ function renderCloud(c){
   c.innerHTML=`<div class="module-title"><div><h3>Cloud, R2 & App Window</h3><p class="muted-note">Production cloud mode. Render, Neon and Cloudflare R2 are active for real testing.</p></div></div><form id="cloudForm" class="grid2"><div class="card subcard"><h3>Cloud API</h3>${input('cloudApiUrl','Cloud API URL',s.cloudApiUrl||'')}${input('backupTarget','Backup Target',s.backupTarget||'local-download-first-r2-later')}<p class="muted-note">Use after local testing is approved.</p></div><div class="card subcard"><h3>Cloudflare R2</h3>${input('r2Mode','R2 Mode',s.r2Mode||'local-placeholder')}${input('r2BucketName','R2 Bucket Name',s.r2BucketName||'')}${input('r2PublicUrl','R2 Public URL',s.r2PublicUrl||'')}<p class="muted-note">Production uploads go directly to Cloudflare R2.</p></div><div class="card subcard"><h3>Print Agent</h3>${input('localAgentUrl','Local Agent URL',s.localAgentUrl||'http://127.0.0.1:9721/print')}${input('printMode','Print Mode',s.printMode||'browser-preview-now-local-agent-next')}${input('appWindowMode','App Window Mode',s.appWindowMode||'pwa-or-edge-app-window')}</div><div class="card subcard"><h3>Status</h3><p>GitHub: connected</p><p>Neon PostgreSQL: connected</p><p>Render: connected</p><p>Cloudflare R2: connected</p></div><button class="primary-btn">Save Cloud Settings</button></form>`;
   $('#cloudForm').onsubmit=async e=>{e.preventDefault();const data=Object.fromEntries(new FormData(e.target));try{await api('/api/admin/settings',data);await loadState();renderShell();toast('Cloud settings saved');}catch(err){toast(err.message,true);}};
 }
-function renderBackup(c){ c.innerHTML=`<div class="module-title"><h3>Backup & Restore</h3></div><div class="grid2"><div class="card subcard"><h3>Manual Backup</h3><p class="muted-note">Downloads full local JSON database. Later this same flow can push backup files to Cloudflare R2.</p><button class="primary-btn" id="downloadBackup">Download Backup</button></div><div class="card subcard"><h3>Restore Backup</h3><p class="muted-note">Use only with a SwiftTill backup JSON file.</p><input type="file" id="restoreFile" accept="application/json"><button class="danger-btn mt" id="restoreBtn">Restore</button></div></div>`; $('#downloadBackup').onclick=()=>downloadApi('/api/backup/download',`swifttill-backup-${Date.now()}.json`).catch(e=>toast(e.message,true)); $('#restoreBtn').onclick=()=>{const file=$('#restoreFile').files[0];if(!file)return toast('Choose backup file',true);const r=new FileReader();r.onload=async()=>{try{await api('/api/backup/restore',JSON.parse(r.result));await loadState();renderShell();toast('Backup restored');}catch(e){toast(e.message,true)}};r.readAsText(file);}; }
+function renderBackup(c){ const b=state.backup||{}; c.innerHTML=`<div class="module-title"><div><h3>Backup, History & Retention</h3><p class="muted-note">Orders/reports history stays in Neon. Daily backup snapshots use Cloudflare R2 when configured.</p></div></div><div class="grid2"><div class="card subcard"><h3>Backup Status</h3><p>Mode: <b>${esc(b.mode||'cloud/database')}</b></p><p>Backups indexed: <b>${b.total||0}</b></p><p>Daily retention: <b>${b.dailyRetentionDays||30} days</b></p><p>Monthly retention: <b>${b.monthlyRetentionMonths||12} months</b></p><p>Latest: <b>${b.latest?new Date(b.latest.exportedAt).toLocaleString():'Not created yet'}</b></p><button class="ghost-btn" id="refreshBackupStatus">Refresh Status</button></div><div class="card subcard"><h3>Create Backup</h3><p class="muted-note">Creates a R2 JSON backup if R2 is configured and also indexes it in Neon state.</p><button class="primary-btn" id="createBackup">Create Cloud Backup</button><button class="ghost-btn mt" id="downloadBackup">Download Backup JSON</button></div><div class="card subcard"><h3>Restore Backup</h3><p class="muted-note">Use only with a SwiftTill backup JSON file. Paid order history is restored exactly from file.</p><input type="file" id="restoreFile" accept="application/json"><button class="danger-btn mt" id="restoreBtn">Restore</button></div><div class="card subcard"><h3>History Rule</h3><p>Deleting menu item/category/deal removes it from live menu only.</p><p>Old paid bills and reports keep line name, price and category snapshot.</p><p>Replacing/deleting media removes old R2 object when it is not reused.</p></div></div>`; $('#refreshBackupStatus').onclick=async()=>{try{const j=await api('/api/backup/status',null,'GET'); state.backup=j.backup; renderBackup(c);}catch(e){toast(e.message,true)}}; $('#createBackup').onclick=async()=>{try{const j=await api('/api/backup/create',{type:'manual'}); state.backup=j.summary; toast('Backup created'); renderBackup(c);}catch(e){toast(e.message,true)}}; $('#downloadBackup').onclick=()=>downloadApi('/api/backup/download',`swifttill-backup-${Date.now()}.json`).catch(e=>toast(e.message,true)); $('#restoreBtn').onclick=()=>{const file=$('#restoreFile').files[0];if(!file)return toast('Choose backup file',true);const r=new FileReader();r.onload=async()=>{try{await api('/api/backup/restore',JSON.parse(r.result));await loadState();renderShell();toast('Backup restored');}catch(e){toast(e.message,true)}};r.readAsText(file);}; }
 setInterval(refreshLiveTimers,1000);
 boot();

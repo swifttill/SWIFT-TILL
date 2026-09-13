@@ -230,3 +230,38 @@ Fixes live POS issues reported after V14:
 ## Phase 17
 
 Print/report operational fixes: unpaid bill print, safe print area, browser/agent receipt fallback, and visible report loading/error states.
+
+
+## Phase 18 — Backup, History & Media Cleanup
+
+This package adds production-safe retention and media cleanup for the real restaurant workflow. Paid orders remain historical records for reports even when the live menu item/category/deal is later deleted. Line name, price and category snapshots are kept on the paid order so reports do not break after menu cleanup.
+
+Production media cleanup rules:
+
+- Replacing a category/item/deal image deletes the previous Cloudflare R2 object when it is not reused.
+- Deleting a category/item/deal removes its menu image from R2 when safe.
+- Replacing the company logo deletes the old R2 logo when safe.
+- Shared media is not deleted if another active record still uses it.
+- Paid order history remains available for reports.
+
+Backup rules:
+
+- Neon cloud state remains the primary live database.
+- Manual backups can be created/downloaded from Admin → Backup / History.
+- Automatic daily backup is indexed and pushed to Cloudflare R2 when configured.
+- Daily backup retention target: 30 days.
+- Monthly backup retention target: 12 months.
+
+Live checks after deploy:
+
+```text
+https://swift-till.onrender.com/api/health
+https://swift-till.onrender.com/api/env-check
+https://swift-till.onrender.com/api/order-engine/status
+```
+
+Expected order engine version:
+
+```text
+18.0.0-backup-history-media-cleanup
+```

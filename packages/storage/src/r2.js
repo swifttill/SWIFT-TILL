@@ -15,12 +15,30 @@ function publicUrlForKey(key, env = process.env) {
   return base ? `${base}/${String(key).replace(/^\//, '')}` : '';
 }
 
+function keyFromPublicUrl(value, env = process.env) {
+  const raw = String(value || '').trim();
+  if (!raw) return '';
+  const publicBase = String(env.R2_PUBLIC_URL || '').replace(/\/$/, '');
+  if (publicBase && raw.startsWith(publicBase + '/')) return decodeURIComponent(raw.slice(publicBase.length + 1));
+  if (!/^https?:\/\//i.test(raw) && !raw.startsWith('/uploads/')) return raw.replace(/^\//, '');
+  return '';
+}
+
 function makeMediaKey({ tenant = 'default', folder = 'uploads', filename = 'file' } = {}) {
   const ext = String(filename).includes('.') ? String(filename).split('.').pop().toLowerCase() : 'bin';
   const safeTenant = String(tenant).replace(/[^a-z0-9_-]/gi, '-').toLowerCase();
   const safeFolder = String(folder).replace(/[^a-z0-9_-]/gi, '-').toLowerCase();
   const safeExt = String(ext).replace(/[^a-z0-9]/gi, '').slice(0, 8) || 'bin';
   return `${safeTenant}/${safeFolder}/${Date.now()}-${crypto.randomBytes(6).toString('hex')}.${safeExt}`;
+}
+
+function makeBackupKey({ tenant = 'swifttill', date = new Date(), type = 'daily' } = {}) {
+  const d = date instanceof Date ? date : new Date(date);
+  const y = d.getUTCFullYear();
+  const m = String(d.getUTCMonth() + 1).padStart(2, '0');
+  const day = String(d.getUTCDate()).padStart(2, '0');
+  const stamp = d.toISOString().replace(/[:.]/g, '-');
+  return `${tenant}/backups/${type}/${y}/${m}/${day}/swifttill-${type}-${stamp}.json`;
 }
 
 function assertImage({ contentType, bytes }) {
@@ -38,14 +56,14 @@ function assertImage({ contentType, bytes }) {
   }
 }
 
-async function uploadImageToR2({ key, body, contentType }, env = process.env) {
+function s3Client(env = process.env) {
   if (!hasR2Config(env)) {
     const err = new Error('Cloudflare R2 is not configured');
     err.status = 503;
     throw err;
   }
-  const { S3Client, PutObjectCommand } = require('@aws-sdk/client-s3');
-  const client = new S3Client({
+  const { S3Client } = require('@aws-sdk/client-s3');
+  return new S3Client({
     region: 'auto',
     endpoint: endpoint(env),
     credentials: {
@@ -53,7 +71,11 @@ async function uploadImageToR2({ key, body, contentType }, env = process.env) {
       secretAccessKey: env.R2_SECRET_ACCESS_KEY
     }
   });
-  await client.send(new PutObjectCommand({
+}
+
+async function uploadImageToR2({ key, body, contentType }, env = process.env) {
+  const { PutObjectCommand } = require('@aws-sdk/client-s3');
+  await s3Client(env).send(new PutObjectCommand({
     Bucket: env.R2_BUCKET_NAME,
     Key: key,
     Body: body,
@@ -63,11 +85,36 @@ async function uploadImageToR2({ key, body, contentType }, env = process.env) {
   return { key, url: publicUrlForKey(key, env) };
 }
 
+async function putJsonToR2({ key, json }, env = process.env) {
+  const { PutObjectCommand } = require('@aws-sdk/client-s3');
+  const body = Buffer.from(JSON.stringify(json, null, 2));
+  await s3Client(env).send(new PutObjectCommand({
+    Bucket: env.R2_BUCKET_NAME,
+    Key: key,
+    Body: body,
+    ContentType: 'application/json; charset=utf-8',
+    CacheControl: 'private, max-age=0, no-cache'
+  }));
+  return { key, url: publicUrlForKey(key, env), bytes: body.length };
+}
+
+async function deleteObjectFromR2(key, env = process.env) {
+  const cleanKey = String(key || '').replace(/^\//, '');
+  if (!cleanKey || !hasR2Config(env)) return { ok: false, skipped: true };
+  const { DeleteObjectCommand } = require('@aws-sdk/client-s3');
+  await s3Client(env).send(new DeleteObjectCommand({ Bucket: env.R2_BUCKET_NAME, Key: cleanKey }));
+  return { ok: true, key: cleanKey };
+}
+
 module.exports = {
   hasR2Config,
   endpoint,
   publicUrlForKey,
+  keyFromPublicUrl,
   makeMediaKey,
+  makeBackupKey,
   assertImage,
-  uploadImageToR2
+  uploadImageToR2,
+  putJsonToR2,
+  deleteObjectFromR2
 };

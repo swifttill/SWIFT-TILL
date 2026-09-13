@@ -4,7 +4,7 @@ const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 const url = require('url');
-const { hasR2Config, makeMediaKey, publicUrlForKey, assertImage, uploadImageToR2 } = require('../../packages/storage/src/r2');
+const { hasR2Config, makeMediaKey, makeBackupKey, publicUrlForKey, keyFromPublicUrl, assertImage, uploadImageToR2, putJsonToR2, deleteObjectFromR2 } = require('../../packages/storage/src/r2');
 const { databaseHealth, hasDatabaseUrl, getPrisma } = require('../../packages/db/src/client');
 
 const ROOT = path.resolve(__dirname, '../..');
@@ -14,7 +14,7 @@ const STORAGE_DIR = path.join(ROOT, 'storage', 'uploads');
 const DB_PATH = path.join(DATA_DIR, 'db.json');
 const PORT = Number(process.env.PORT || 5174);
 const TOKENS = new Map();
-const APP_VERSION = '17.0.0-print-reports-operational-fix';
+const APP_VERSION = '18.0.0-backup-history-media-cleanup';
 const CLOUD_STATE_KEY = process.env.SWIFTTILL_STATE_KEY || 'swift-till-main';
 let cloudStateCache = null;
 let cloudStateInitPromise = null;
@@ -31,6 +31,88 @@ function uid(prefix = 'id') { return `${prefix}_${crypto.randomBytes(8).toString
 function money(n) { return Math.round((Number(n) || 0) * 100) / 100; }
 function ensureDir(p) { if (!fs.existsSync(p)) fs.mkdirSync(p, { recursive: true }); }
 function safeName(name) { return String(name || 'file').replace(/[^a-z0-9._-]/gi, '-').replace(/-+/g, '-').slice(0, 80); }
+
+function todayKey() { return new Date().toISOString().slice(0,10); }
+function monthKey() { return new Date().toISOString().slice(0,7); }
+function publicMediaValues(db) {
+  const set = new Set();
+  const add = v => { if (v) set.add(String(v)); };
+  add(db?.settings?.logoUrl);
+  for (const listName of ['categories','items','deals']) for (const r of db?.[listName] || []) add(r.imageUrl);
+  return set;
+}
+function isHistoricalMediaReference(db, value) {
+  const v = String(value || '');
+  if (!v) return false;
+  // Images are not needed for reports, but keep protection if a future paid receipt starts using them.
+  return (db.orders || []).some(o => o.status === 'PAID' && (o.lines || []).some(l => l.imageUrl === v));
+}
+async function cleanupMediaReference(db, value, reason = 'MEDIA_CLEANUP') {
+  const v = String(value || '').trim();
+  if (!v) return { ok: true, skipped: true };
+  if (publicMediaValues(db).has(v)) return { ok: true, skipped: true, reason: 'still-in-use' };
+  if (isHistoricalMediaReference(db, v)) return { ok: true, skipped: true, reason: 'historical-paid-order-reference' };
+  try {
+    const key = keyFromPublicUrl(v);
+    if (key && hasR2Config()) return await deleteObjectFromR2(key);
+    if (v.startsWith('/uploads/')) {
+      const fp = path.join(PUBLIC_DIR, v.replace(/^\/uploads\//, 'uploads/'));
+      if (fp.startsWith(PUBLIC_DIR) && fs.existsSync(fp)) fs.unlinkSync(fp);
+      return { ok: true, local: true };
+    }
+  } catch (e) {
+    console.error(`${reason} failed:`, e.message);
+    return { ok: false, error: e.message };
+  }
+  return { ok: true, skipped: true, reason: 'not-managed-media' };
+}
+function snapshotLine(db, line) {
+  const cat = db.categories?.find(c => c.id === line.categoryId);
+  return { ...line, categoryName: line.categoryName || cat?.name || (line.kind === 'DEAL' ? 'Deals' : 'Uncategorized'), sourceName: line.sourceName || line.name, sourcePrice: money(line.sourcePrice ?? line.price) };
+}
+function snapshotOrderForHistory(db, order) {
+  order.lines = (order.lines || []).map(l => snapshotLine(db, l));
+  order.historyLocked = order.status === 'PAID' || order.historyLocked || false;
+  return order;
+}
+function backupSummary(db) {
+  const backups = Array.isArray(db?.backups) ? db.backups : [];
+  return { total: backups.length, latest: backups[0] || null, dailyRetentionDays: 30, monthlyRetentionMonths: 12, r2Configured: hasR2Config(), mode: hasR2Config() ? 'r2-json-snapshot' : 'manual-json-download' };
+}
+async function createBackupSnapshot(db, user, type = 'manual') {
+  if (!Array.isArray(db.backups)) db.backups = [];
+  const exportedAt = now();
+  const payload = { exportedAt, app: 'SwiftTill POS', version: APP_VERSION, type, retention: { dailyDays: 30, monthlyMonths: 12 }, db };
+  let storage = 'database-index-only', key = '', url = '', bytes = Buffer.byteLength(JSON.stringify(payload));
+  if (hasR2Config()) {
+    const res = await putJsonToR2({ key: makeBackupKey({ tenant: 'swifttill', type }), json: payload });
+    storage = 'cloudflare-r2'; key = res.key; url = res.url; bytes = res.bytes;
+  }
+  const rec = { id: uid('bak'), type, storage, key, url, bytes, exportedAt, by: user?.name || 'System' };
+  db.backups.unshift(rec);
+  const daily = db.backups.filter(b => b.type === 'daily').slice(0, 30);
+  const monthly = db.backups.filter(b => b.type === 'monthly').slice(0, 12);
+  const manual = db.backups.filter(b => b.type === 'manual').slice(0, 20);
+  db.backups = [...manual, ...daily, ...monthly].sort((a,b) => new Date(b.exportedAt)-new Date(a.exportedAt));
+  db.meta.lastBackupAt = exportedAt;
+  db.meta.lastBackupDate = todayKey();
+  if (type === 'monthly') db.meta.lastMonthlyBackup = monthKey();
+  audit(db, user, 'BACKUP_CREATED', { type, storage, key });
+  return rec;
+}
+async function maybeCreateDailyBackup(db) {
+  if (!shouldUseCloudState()) return;
+  if (!db.meta) db.meta = {};
+  const today = todayKey();
+  if (db.meta.lastBackupDate === today) return;
+  db.meta.lastBackupDate = today;
+  createBackupSnapshot(db, null, 'daily').catch(e => console.error('Daily backup failed:', e.message));
+  if (db.meta.lastMonthlyBackup !== monthKey()) {
+    db.meta.lastMonthlyBackup = monthKey();
+    createBackupSnapshot(db, null, 'monthly').catch(e => console.error('Monthly backup failed:', e.message));
+  }
+}
+
 function seedDb() {
   return {
     meta: {
@@ -40,7 +122,8 @@ function seedDb() {
       storage: shouldUseCloudState() ? 'postgresql-cloud-state' : 'local-json',
       deployment: 'render-neon-cloudflare-r2-production',
       hardcodedBusinessData: false,
-      hardcodedCleanupAt: now()
+      hardcodedCleanupAt: now(),
+      retention: { dailyBackups: 30, monthlyBackups: 12, orderHistory: 'permanent' }
     },
     settings: {
       businessName: '', legalName: '', branchName: '', branchCode: '', phone: '', email: '', website: '', address: '', city: '', country: 'Pakistan', currency: 'PKR', logoUrl: '',
@@ -68,7 +151,7 @@ function seedDb() {
       { id: 'card', name: 'Card', active: true, system: true },
       { id: 'online', name: 'Online', active: true, system: true }
     ],
-    customers: [], orders: [], shifts: [], refunds: [], auditLogs: [], counters: { bill: 1000, z: 0 }
+    customers: [], orders: [], shifts: [], refunds: [], auditLogs: [], backups: [], mediaTrash: [], counters: { bill: 1000, z: 0 }
   };
 }
 
@@ -137,6 +220,7 @@ async function saveDb(db) {
     cloudStateCache = db;
     const prisma = await getPrisma();
     await prisma.$executeRawUnsafe('INSERT INTO swifttill_app_state (key, value, updated_at) VALUES ($1, $2::jsonb, NOW()) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()', CLOUD_STATE_KEY, JSON.stringify(db));
+    maybeCreateDailyBackup(db).catch(e => console.error('Auto backup check failed:', e.message));
     return { ok: true, store: 'postgresql-cloud-state', persistedAt: now() };
   }
   ensureDir(DATA_DIR);
@@ -157,7 +241,7 @@ function normalizeLine(line) {
   const qty = Math.max(1, Number(line.qty || 1));
   const price = money(line.price || 0);
   const modifiers = Array.isArray(line.modifiers) ? line.modifiers.map(m => ({ name: String(m.name || ''), price: money(m.price || m.priceDelta || 0) })).filter(m => m.name) : [];
-  return { ...line, id: line.id || uid('lin'), qty, price, modifiers, lineTotal: money(qty * price), notes: line.notes || '' };
+  return { ...line, id: line.id || line.lineId || uid('lin'), lineId: line.lineId || line.id || uid('lin'), qty, price, modifiers, lineTotal: money(qty * (price + modifiers.reduce((a,m)=>a+Number(m.price||0),0))), notes: line.notes || line.note || '' };
 }
 function normalizeOrderLines(lines) {
   return Array.isArray(lines) ? lines.map(normalizeLine).filter(l => l.name && l.qty > 0) : [];
@@ -201,7 +285,7 @@ async function runtimeHealth() {
 function migrateDb(db) {
   const seed = seedDb();
   removeLegacyHardcodedData(db);
-  for (const k of ['settings','paymentMethods','orders','shifts','refunds','auditLogs','counters','customers']) if (db[k] === undefined) db[k] = seed[k];
+  for (const k of ['settings','paymentMethods','orders','shifts','refunds','auditLogs','backups','mediaTrash','counters','customers']) if (db[k] === undefined) db[k] = seed[k];
   if (!Array.isArray(db.roles)) db.roles = seed.roles;
   if (db.meta) { db.meta.version = APP_VERSION; db.meta.storage = shouldUseCloudState() ? 'postgresql-cloud-state' : 'local-json'; }
   for (const [k,v] of Object.entries(seed.settings)) if (db.settings[k] === undefined) db.settings[k] = v;
@@ -255,7 +339,7 @@ function hasBillLines(order) { return Array.isArray(order?.lines) && order.lines
 function requireBillLines(order, message = 'Add at least one item before continuing') { if (!hasBillLines(order)) throw Object.assign(new Error(message), { status: 422 }); }
 function tableMap(db) { const open = db.orders.filter(o => ['OPEN','HELD'].includes(o.status) && o.type === 'DINE_IN' && o.tableId && hasBillLines(o)); return db.tables.map(t => { const order = open.find(o => o.tableId === t.id); return { ...t, busy: !!order, orderId: order?.id || null, orderNumber: order?.number || null, occupiedAt: order?.tableOccupiedAt || order?.createdAt || null, guests: order?.guests || 0 }; }); }
 function publicUser(db, u) { const permissions = userPermissions(db, u); return { id: u.id, name: u.name, email: u.email, roleIds: u.roleIds || [], roles: (u.roleIds || []).map(id => db.roles.find(r => r.id === id)?.name).filter(Boolean), permissions }; }
-function compactState(db, user) { return { user: publicUser(db, user), permissions: userPermissions(db, user), permissionCatalog: PERMISSIONS, settings: db.settings, roles: db.roles, categories: db.categories, items: db.items, deals: db.deals, tables: tableMap(db), orderTakers: db.orderTakers, paymentMethods: db.paymentMethods, users: db.users.map(u => ({ id: u.id, name: u.name, email: u.email, roleIds: u.roleIds || [], pin: u.pin || '', active: u.active })), openOrders: db.orders.filter(o => ['OPEN','HELD'].includes(o.status) && hasBillLines(o)).sort((a,b) => new Date(a.createdAt) - new Date(b.createdAt)), paidOrders: db.orders.filter(o => o.status === 'PAID').slice(-80).reverse(), refunds: db.refunds.slice(-80).reverse(), activeShift: activeShift(db), auditLogs: db.auditLogs.slice(0, 80) }; }
+function compactState(db, user) { return { user: publicUser(db, user), permissions: userPermissions(db, user), permissionCatalog: PERMISSIONS, settings: db.settings, roles: db.roles, categories: db.categories, items: db.items, deals: db.deals, tables: tableMap(db), orderTakers: db.orderTakers, paymentMethods: db.paymentMethods, users: db.users.map(u => ({ id: u.id, name: u.name, email: u.email, roleIds: u.roleIds || [], pin: u.pin || '', active: u.active })), openOrders: db.orders.filter(o => ['OPEN','HELD'].includes(o.status) && hasBillLines(o)).sort((a,b) => new Date(a.createdAt) - new Date(b.createdAt)), paidOrders: db.orders.filter(o => o.status === 'PAID').slice(-80).reverse(), refunds: db.refunds.slice(-80).reverse(), activeShift: activeShift(db), auditLogs: db.auditLogs.slice(0, 80), backup: backupSummary(db), mediaTrash: (db.mediaTrash || []).slice(0, 50) }; }
 function between(date, from, to) { const t = new Date(date).getTime(); const a = from ? new Date(`${from}T00:00:00`).getTime() : 0; const b = to ? new Date(`${to}T23:59:59`).getTime() : Date.now() + 86400000; return t >= a && t <= b; }
 function reportData(db, filters = {}) {
   const from = filters.from || '';
@@ -306,7 +390,7 @@ function reportData(db, filters = {}) {
     for (const l of (o.lines || [])) {
       const mods = (l.modifiers || []).reduce((a,m) => a + Number(m.price || 0), 0);
       const amount = ((Number(l.price) || 0) + mods) * (Number(l.qty) || 0);
-      itemWise[l.name] ||= { item: l.name, category: db.categories.find(c => c.id === l.categoryId)?.name || (l.kind === 'DEAL' ? 'Deals' : 'Uncategorized'), qty: 0, sales: 0 };
+      itemWise[l.name] ||= { item: l.name, category: l.categoryName || db.categories.find(c => c.id === l.categoryId)?.name || (l.kind === 'DEAL' ? 'Deals' : 'Uncategorized'), qty: 0, sales: 0 };
       itemWise[l.name].qty += Number(l.qty) || 0;
       itemWise[l.name].sales = money(itemWise[l.name].sales + amount);
       const cat = itemWise[l.name].category;
@@ -332,9 +416,54 @@ function reportData(db, filters = {}) {
     orders: paid.map(o => ({ number: o.number, date: o.paidAt, type: o.type, table: db.tables.find(t => t.id === o.tableId)?.name || '', customer: o.customerName || '', mobile: o.mobile || '', cashier: o.cashierName || '', orderTaker: o.orderTakerName || '', subtotal: totals(o).subtotal, discount: totals(o).discount, deliveryFee: totals(o).deliveryFee, total: totals(o).total, payments: (o.payments || []).map(p => `${p.method}:${p.amount}`).join(', ') }))
   };
 }
-function buildReceipt(db, order) { const t = totals(order); const table = db.tables.find(x => x.id === order.tableId)?.name || ''; return { business: db.settings.businessName, legalName: db.settings.legalName, branchName: db.settings.branchName, branchCode: db.settings.branchCode, phone: db.settings.phone, email: db.settings.email, website: db.settings.website, address: db.settings.address, city: db.settings.city, country: db.settings.country, logoUrl: db.settings.logoUrl, header: db.settings.receiptHeader, footer: db.settings.receiptFooter, receiptWidth: db.settings.receiptWidth, receiptCopies: db.settings.receiptCopies, showLogoOnReceipt: db.settings.showLogoOnReceipt, showCustomerOnReceipt: db.settings.showCustomerOnReceipt, showOrderTakerOnReceipt: db.settings.showOrderTakerOnReceipt, showCashierOnReceipt: db.settings.showCashierOnReceipt, showPaymentBreakdown: db.settings.showPaymentBreakdown, number: order.number, date: order.paidAt || now(), cashier: order.cashierName, type: order.type, table, guests: order.guests, orderTaker: order.orderTakerName, customer: order.customerName, mobile: order.mobile, addressLine: order.address, lines: order.lines, totals: t, payments: order.payments || [] }; }
-async function upsertList(res, db, user, key, body, action) { const kindMap={categories:'category',items:'item',deals:'deal',tables:'table',orderTakers:'taker',paymentMethods:'payment',users:'user',roles:'role'}; let record = validateAdminRecord(kindMap[key] || key, { ...body }); if (!record.id) { record.id = uid(key.slice(0,3)); db[key].push(record); } else { const i = db[key].findIndex(x => x.id === record.id); if (i >= 0) db[key][i] = { ...db[key][i], ...record }; else db[key].push(record); } audit(db, user, action, { id: record.id, name: record.name }); await saveDb(db); return send(res, 200, { ok: true, record }); }
-async function deleteListRecord(res, db, user, key, id, action) { const i = db[key].findIndex(x => x.id === id); if (i < 0) throw Object.assign(new Error('Record not found'), { status: 404 }); const record = db[key][i]; if (record.system) throw Object.assign(new Error('System record cannot be deleted'), { status: 409 }); db[key].splice(i, 1); audit(db, user, action, { id: record.id, name: record.name }); await saveDb(db); return send(res, 200, { ok: true, deleted: record }); }
+function buildReceipt(db, order) { const t = totals(order); const table = order.tableName || db.tables.find(x => x.id === order.tableId)?.name || ''; return { business: db.settings.businessName, legalName: db.settings.legalName, branchName: db.settings.branchName, branchCode: db.settings.branchCode, phone: db.settings.phone, email: db.settings.email, website: db.settings.website, address: db.settings.address, city: db.settings.city, country: db.settings.country, logoUrl: db.settings.logoUrl, header: db.settings.receiptHeader, footer: db.settings.receiptFooter, receiptWidth: db.settings.receiptWidth, receiptCopies: db.settings.receiptCopies, showLogoOnReceipt: db.settings.showLogoOnReceipt, showCustomerOnReceipt: db.settings.showCustomerOnReceipt, showOrderTakerOnReceipt: db.settings.showOrderTakerOnReceipt, showCashierOnReceipt: db.settings.showCashierOnReceipt, showPaymentBreakdown: db.settings.showPaymentBreakdown, number: order.number, date: order.paidAt || now(), cashier: order.cashierName, type: order.type, table, guests: order.guests, orderTaker: order.orderTakerName, customer: order.customerName, mobile: order.mobile, addressLine: order.address, lines: order.lines, totals: t, payments: order.payments || [] }; }
+async function upsertList(res, db, user, key, body, action) {
+  const kindMap={categories:'category',items:'item',deals:'deal',tables:'table',orderTakers:'taker',paymentMethods:'payment',users:'user',roles:'role'};
+  let record = validateAdminRecord(kindMap[key] || key, { ...body });
+  let previousImage = '';
+  if (!record.id) {
+    record.id = uid(key.slice(0,3));
+    db[key].push(record);
+  } else {
+    const i = db[key].findIndex(x => x.id === record.id);
+    if (i >= 0) {
+      previousImage = db[key][i].imageUrl || '';
+      db[key][i] = { ...db[key][i], ...record };
+      record = db[key][i];
+    } else db[key].push(record);
+  }
+  if (previousImage && previousImage !== record.imageUrl) {
+    const cleaned = await cleanupMediaReference(db, previousImage, `${action}_OLD_IMAGE_DELETED`);
+    db.mediaTrash = Array.isArray(db.mediaTrash) ? db.mediaTrash : [];
+    db.mediaTrash.unshift({ url: previousImage, action: `${action}_OLD_IMAGE_CLEANUP`, cleaned, at: now(), by: user.name });
+  }
+  audit(db, user, action, { id: record.id, name: record.name });
+  await saveDb(db);
+  return send(res, 200, { ok: true, record });
+}
+async function deleteListRecord(res, db, user, key, id, action) {
+  const i = db[key].findIndex(x => x.id === id);
+  if (i < 0) throw Object.assign(new Error('Record not found'), { status: 404 });
+  const record = db[key][i];
+  if (record.system) throw Object.assign(new Error('System record cannot be deleted'), { status: 409 });
+  if (key === 'items') {
+    const used = db.orders.some(o => (o.lines || []).some(l => l.itemId === id));
+    record.deletedAt = now(); record.active = false; record.deletedBy = user.name;
+    if (used) { db.deletedCatalog = Array.isArray(db.deletedCatalog) ? db.deletedCatalog : []; db.deletedCatalog.unshift({ type:'item', record, deletedAt: now(), by: user.name }); }
+  }
+  if (key === 'categories') {
+    (db.items || []).filter(x => x.categoryId === id).forEach(x => { x.categoryName = record.name; });
+  }
+  db[key].splice(i, 1);
+  if (record.imageUrl) {
+    const cleaned = await cleanupMediaReference(db, record.imageUrl, `${action}_IMAGE_DELETED`);
+    db.mediaTrash = Array.isArray(db.mediaTrash) ? db.mediaTrash : [];
+    db.mediaTrash.unshift({ url: record.imageUrl, action: `${action}_IMAGE_CLEANUP`, cleaned, at: now(), by: user.name });
+  }
+  audit(db, user, action, { id: record.id, name: record.name, historyPreserved: true });
+  await saveDb(db);
+  return send(res, 200, { ok: true, deleted: record, historyPreserved: true });
+}
 
 async function handleApi(req, res, pathname, query) {
   try {
@@ -342,7 +471,7 @@ async function handleApi(req, res, pathname, query) {
     if (pathname === '/api/env-check' && req.method === 'GET') return send(res, 200, { ok: true, environment: { nodeEnv: process.env.NODE_ENV || 'development', databaseUrl: hasDatabaseUrl() ? 'loaded' : 'missing', dataStore: shouldUseCloudState() ? 'postgresql-cloud-state' : 'local-json', r2: hasR2Config() ? 'configured' : 'missing', production: productionMode() }, note: 'Safe status only. No secrets are returned.' });
     const db = await loadDb();
     assertOrderEngineState(db);
-    if (pathname === '/api/order-engine/status' && req.method === 'GET') return send(res, 200, { ok: true, version: APP_VERSION, store: shouldUseCloudState() ? 'postgresql-cloud-state' : 'local-json', rules: { oneTableOneActiveDineInOrder: true, paymentChangeCashOnly: true, paidOrdersLocked: true, tableReleasedAfterFullPayment: true, synchronousPersistence: true, hardcodedBusinessData: false, zeroPriceBlocked: true, emptyHoldBlocked: true, unpaidBillPrint: true, printAreaSafe: true, reportsVisible: true }, counts: { openOrders: db.orders.filter(o => ['OPEN','HELD'].includes(o.status) && hasBillLines(o)).length, paidOrders: db.orders.filter(o => o.status === 'PAID').length, categories: db.categories.length, items: db.items.length, pricedActiveItems: activePricedItems(db).length, deals: db.deals.length, pricedActiveDeals: activePricedDeals(db).length, tables: db.tables.length } });
+    if (pathname === '/api/order-engine/status' && req.method === 'GET') return send(res, 200, { ok: true, version: APP_VERSION, store: shouldUseCloudState() ? 'postgresql-cloud-state' : 'local-json', rules: { oneTableOneActiveDineInOrder: true, paymentChangeCashOnly: true, paidOrdersLocked: true, tableReleasedAfterFullPayment: true, synchronousPersistence: true, hardcodedBusinessData: false, zeroPriceBlocked: true, emptyHoldBlocked: true, unpaidBillPrint: true, printAreaSafe: true, reportsVisible: true, mediaCleanup: true, automaticBackups: true, reportHistoryPreservedAfterItemDelete: true, fastUiNoFullScreenBlock: true }, counts: { openOrders: db.orders.filter(o => ['OPEN','HELD'].includes(o.status) && hasBillLines(o)).length, paidOrders: db.orders.filter(o => o.status === 'PAID').length, categories: db.categories.length, items: db.items.length, pricedActiveItems: activePricedItems(db).length, deals: db.deals.length, pricedActiveDeals: activePricedDeals(db).length, tables: db.tables.length } });
     if (pathname === '/api/login' && req.method === 'POST') { const body = await parseBody(req); const user = db.users.find(u => u.email.toLowerCase() === String(body.email || '').toLowerCase() && u.password === body.password && u.active); if (!user) return send(res, 401, { ok: false, error: 'Invalid login' }); const token = crypto.randomBytes(24).toString('hex'); TOKENS.set(token, { userId: user.id, createdAt: Date.now() }); audit(db, user, 'LOGIN', { email: user.email }); await saveDb(db); return send(res, 200, { ok: true, token, user: publicUser(db, user) }); }
     const user = requireAuth(req, db);
     if (pathname === '/api/state') return send(res, 200, { ok: true, data: compactState(db, user) });
@@ -354,7 +483,7 @@ async function handleApi(req, res, pathname, query) {
 
     if (pathname === '/api/orders/create' && req.method === 'POST') { requirePerm(db, user, 'pos.create'); const b = await parseBody(req); if (!['DINE_IN','DELIVERY','TAKEAWAY'].includes(b.type)) throw Object.assign(new Error('Invalid order type'), { status: 422 }); if (b.type === 'DINE_IN') { if (!b.tableId) throw Object.assign(new Error('Dine In order requires table selection'), { status: 422 }); const table = db.tables.find(t => t.id === b.tableId && t.active); if (!table) throw Object.assign(new Error('Selected table not found'), { status: 404 }); const busy = db.orders.find(o => ['OPEN','HELD'].includes(o.status) && o.type === 'DINE_IN' && o.tableId === b.tableId && hasBillLines(o)); if (busy) throw Object.assign(new Error('This table already has an active order'), { status: 409 }); } const taker = db.orderTakers.find(t => t.id === b.orderTakerId); const createdAt = now(); const order = { id: uid('ord'), number: orderNumber(db), type: b.type, status: 'OPEN', tableId: b.type === 'DINE_IN' ? b.tableId : null, guests: b.type === 'DINE_IN' ? Number(b.guests || 1) : 0, orderTakerId: b.orderTakerId || null, orderTakerName: taker?.name || '', customerName: b.customerName || '', mobile: b.mobile || '', address: b.address || '', deliveryNotes: b.deliveryNotes || '', deliveryFee: b.type === 'DELIVERY' ? money(b.deliveryFee ?? db.settings.defaultDeliveryFee) : 0, lines: [], discountType: 'NONE', discountValue: 0, createdAt, tableOccupiedAt: b.type === 'DINE_IN' ? createdAt : null, cashierId: user.id, cashierName: user.name, timeline: [{ event: 'CREATED', at: createdAt, by: user.name }] }; db.orders.push(order); audit(db, user, 'ORDER_CREATED', { orderId: order.id, number: order.number, type: order.type }); await saveDb(db); return send(res, 200, { ok: true, order }); }
     if (pathname === '/api/orders/save' && req.method === 'POST') { requirePerm(db, user, 'pos.edit'); const b = await parseBody(req); const order = db.orders.find(o => o.id === b.id); if (!order) throw Object.assign(new Error('Order not found'), { status: 404 }); if (order.status === 'PAID') throw Object.assign(new Error('Paid order cannot be edited'), { status: 409 }); const nextType = b.type || order.type; const nextTableId = b.tableId ?? order.tableId; if (nextType === 'DINE_IN' && !nextTableId) throw Object.assign(new Error('Dine In order requires table selection'), { status: 422 }); const oldTable = order.tableId; if (nextType === 'DINE_IN' && nextTableId && nextTableId !== order.tableId) { const table = db.tables.find(t => t.id === nextTableId && t.active); if (!table) throw Object.assign(new Error('Selected table not found'), { status: 404 }); const busy = db.orders.find(o => o.id !== order.id && ['OPEN','HELD'].includes(o.status) && o.type === 'DINE_IN' && o.tableId === nextTableId); if (busy) throw Object.assign(new Error('Target table is busy'), { status: 409 }); } Object.assign(order, { type: nextType, tableId: nextType === 'DINE_IN' ? nextTableId : null, guests: nextType === 'DINE_IN' ? Number((b.guests ?? order.guests) || 1) : 0, orderTakerId: b.orderTakerId ?? order.orderTakerId, orderTakerName: b.orderTakerName ?? order.orderTakerName, customerName: b.customerName ?? order.customerName, mobile: b.mobile ?? order.mobile, address: b.address ?? order.address, deliveryFee: nextType === 'DELIVERY' ? money(b.deliveryFee ?? order.deliveryFee) : 0, lines: Array.isArray(b.lines) ? normalizeOrderLines(b.lines) : normalizeOrderLines(order.lines), discountType: b.discountType || order.discountType, discountValue: money(b.discountValue ?? order.discountValue), updatedAt: now() }); if (order.type === 'DINE_IN' && order.tableId && !order.tableOccupiedAt && hasBillLines(order)) order.tableOccupiedAt = oldTable && oldTable !== order.tableId ? (order.createdAt || now()) : now(); if (oldTable && oldTable !== order.tableId) order.timeline.push({ event: 'TABLE_TRANSFERRED', at: now(), by: user.name, from: oldTable, to: order.tableId }); if (b.hold) { requirePerm(db, user, 'pos.hold'); requireBillLines(order, 'Add at least one item before Hold'); order.status = 'HELD'; order.heldAt = now(); order.timeline.push({ event: 'HELD', at: now(), by: user.name }); } else { requireBillLines(order, 'Add at least one item before saving order'); order.status = 'OPEN'; } audit(db, user, b.hold ? 'ORDER_HELD' : 'ORDER_SAVED', { orderId: order.id, number: order.number }); await saveDb(db); return send(res, 200, { ok: true, order, totals: totals(order) }); }
-    if (pathname === '/api/orders/pay' && req.method === 'POST') { requirePerm(db, user, 'pos.pay'); const b = await parseBody(req); const order = db.orders.find(o => o.id === b.id); if (!order) throw Object.assign(new Error('Order not found'), { status: 404 }); if (order.status === 'PAID') throw Object.assign(new Error('Order already paid'), { status: 409 }); if (order.type === 'DINE_IN' && !order.tableId) throw Object.assign(new Error('Dine In order requires table before payment'), { status: 422 }); if (Array.isArray(b.lines)) order.lines = normalizeOrderLines(b.lines); order.discountType = b.discountType || order.discountType; order.discountValue = money(b.discountValue ?? order.discountValue); order.deliveryFee = order.type === 'DELIVERY' ? money(b.deliveryFee ?? order.deliveryFee) : 0; requireBillLines(order, 'Add at least one item before payment'); const t = totals(order); if (t.total <= 0) throw Object.assign(new Error('Order total must be greater than 0. Check item/deal price.'), { status: 422 }); const payments = validateAndNormalizePayments(b.payments || [], t.total); order.payments = payments; order.status = 'PAID'; order.paidAt = now(); order.tableReleasedAt = now(); order.timeline.push({ event: 'PAID', at: now(), by: user.name, total: t.total }); audit(db, user, 'ORDER_PAID', { orderId: order.id, number: order.number, total: t.total, payments }); await saveDb(db); return send(res, 200, { ok: true, order, totals: t, receipt: buildReceipt(db, order) }); }
+    if (pathname === '/api/orders/pay' && req.method === 'POST') { requirePerm(db, user, 'pos.pay'); const b = await parseBody(req); const order = db.orders.find(o => o.id === b.id); if (!order) throw Object.assign(new Error('Order not found'), { status: 404 }); if (order.status === 'PAID') throw Object.assign(new Error('Order already paid'), { status: 409 }); if (order.type === 'DINE_IN' && !order.tableId) throw Object.assign(new Error('Dine In order requires table before payment'), { status: 422 }); if (Array.isArray(b.lines)) order.lines = normalizeOrderLines(b.lines); order.discountType = b.discountType || order.discountType; order.discountValue = money(b.discountValue ?? order.discountValue); order.deliveryFee = order.type === 'DELIVERY' ? money(b.deliveryFee ?? order.deliveryFee) : 0; requireBillLines(order, 'Add at least one item before payment'); snapshotOrderForHistory(db, order); const t = totals(order); if (t.total <= 0) throw Object.assign(new Error('Order total must be greater than 0. Check item/deal price.'), { status: 422 }); const payments = validateAndNormalizePayments(b.payments || [], t.total); order.payments = payments; order.status = 'PAID'; order.paidAt = now(); order.tableReleasedAt = now(); order.timeline.push({ event: 'PAID', at: now(), by: user.name, total: t.total }); audit(db, user, 'ORDER_PAID', { orderId: order.id, number: order.number, total: t.total, payments }); await saveDb(db); return send(res, 200, { ok: true, order, totals: t, receipt: buildReceipt(db, order) }); }
     if (pathname === '/api/orders/void' && req.method === 'POST') { requirePerm(db, user, 'pos.void'); const b = await parseBody(req); requireManager(db, b.managerPin); const order = db.orders.find(o => o.id === b.id); if (!order) throw Object.assign(new Error('Order not found'), { status: 404 }); order.status = 'VOID'; order.voidedAt = now(); order.voidReason = b.reason || 'Manager void'; order.timeline.push({ event: 'VOIDED', at: now(), by: user.name, reason: order.voidReason }); audit(db, user, 'ORDER_VOIDED', { orderId: order.id, number: order.number, reason: order.voidReason }); await saveDb(db); return send(res, 200, { ok: true, order }); }
     if (pathname === '/api/orders/refund' && req.method === 'POST') { requirePerm(db, user, 'pos.refund'); const b = await parseBody(req); requireManager(db, b.managerPin); const order = db.orders.find(o => o.id === b.id); if (!order || order.status !== 'PAID') throw Object.assign(new Error('Paid order not found'), { status: 404 }); const amount = money(b.amount || totals(order).total); if (amount <= 0) throw Object.assign(new Error('Invalid refund amount'), { status: 422 }); const refund = { id: uid('ref'), orderId: order.id, orderNumber: order.number, amount, method: b.method || 'Cash', reason: b.reason || 'Refund', createdAt: now(), by: user.name }; db.refunds.push(refund); order.timeline.push({ event: 'REFUNDED', at: now(), by: user.name, amount }); audit(db, user, 'ORDER_REFUNDED', refund); await saveDb(db); return send(res, 200, { ok: true, refund }); }
 
@@ -406,13 +535,15 @@ async function handleApi(req, res, pathname, query) {
       return send(res, 200, { ok: true, order });
     }
 
-    if (pathname.startsWith('/api/admin/') && req.method === 'POST') { const b = await parseBody(req); const action = pathname.split('/').pop(); if (['category','item','deal'].includes(action)) { requirePerm(db, user, 'admin.menu'); return upsertList(res, db, user, action === 'category' ? 'categories' : action === 'item' ? 'items' : 'deals', b, `${action.toUpperCase()}_SAVED`); } if (action === 'payment') { requirePerm(db, user, 'admin.payments'); return upsertList(res, db, user, 'paymentMethods', b, 'PAYMENT_METHOD_SAVED'); } if (action === 'table') { requirePerm(db, user, 'admin.tables'); return upsertList(res, db, user, 'tables', b, 'TABLE_SAVED'); } if (action === 'taker') { requirePerm(db, user, 'admin.staff'); return upsertList(res, db, user, 'orderTakers', b, 'ORDER_TAKER_SAVED'); } if (action === 'user') { requirePerm(db, user, 'admin.users'); if (!Array.isArray(b.roleIds)) b.roleIds = b.roleId ? [b.roleId] : ['role_cashier']; return upsertList(res, db, user, 'users', b, 'USER_SAVED'); } if (action === 'role') { requirePerm(db, user, 'admin.roles'); b.permissions = Array.isArray(b.permissions) ? b.permissions.filter(p => PERMISSIONS.includes(p)) : []; return upsertList(res, db, user, 'roles', b, 'ROLE_SAVED'); } if (action === 'settings') { requirePerm(db, user, 'admin.settings'); db.settings = { ...db.settings, ...validateAdminRecord('settings', b) }; audit(db, user, 'SETTINGS_SAVED', Object.keys(b)); await saveDb(db); return send(res, 200, { ok: true, settings: db.settings }); } }
+    if (pathname.startsWith('/api/admin/') && req.method === 'POST') { const b = await parseBody(req); const action = pathname.split('/').pop(); if (['category','item','deal'].includes(action)) { requirePerm(db, user, 'admin.menu'); return upsertList(res, db, user, action === 'category' ? 'categories' : action === 'item' ? 'items' : 'deals', b, `${action.toUpperCase()}_SAVED`); } if (action === 'payment') { requirePerm(db, user, 'admin.payments'); return upsertList(res, db, user, 'paymentMethods', b, 'PAYMENT_METHOD_SAVED'); } if (action === 'table') { requirePerm(db, user, 'admin.tables'); return upsertList(res, db, user, 'tables', b, 'TABLE_SAVED'); } if (action === 'taker') { requirePerm(db, user, 'admin.staff'); return upsertList(res, db, user, 'orderTakers', b, 'ORDER_TAKER_SAVED'); } if (action === 'user') { requirePerm(db, user, 'admin.users'); if (!Array.isArray(b.roleIds)) b.roleIds = b.roleId ? [b.roleId] : ['role_cashier']; return upsertList(res, db, user, 'users', b, 'USER_SAVED'); } if (action === 'role') { requirePerm(db, user, 'admin.roles'); b.permissions = Array.isArray(b.permissions) ? b.permissions.filter(p => PERMISSIONS.includes(p)) : []; return upsertList(res, db, user, 'roles', b, 'ROLE_SAVED'); } if (action === 'settings') { requirePerm(db, user, 'admin.settings'); const prevLogo = db.settings.logoUrl || ''; const nextSettings = validateAdminRecord('settings', b); db.settings = { ...db.settings, ...nextSettings }; if (prevLogo && nextSettings.logoUrl && prevLogo !== nextSettings.logoUrl) { const cleaned = await cleanupMediaReference(db, prevLogo, 'SETTINGS_OLD_LOGO_DELETED'); db.mediaTrash = Array.isArray(db.mediaTrash) ? db.mediaTrash : []; db.mediaTrash.unshift({ url: prevLogo, action: 'SETTINGS_OLD_LOGO_CLEANUP', cleaned, at: now(), by: user.name }); } audit(db, user, 'SETTINGS_SAVED', Object.keys(b)); await saveDb(db); return send(res, 200, { ok: true, settings: db.settings }); } }
 
     if (pathname.startsWith('/api/admin/') && req.method === 'DELETE') { const b = await parseBody(req); const action = pathname.split('/').pop(); if (!b.id) throw Object.assign(new Error('Record id is required'), { status: 422 }); if (['category','item','deal'].includes(action)) { requirePerm(db, user, 'admin.menu'); return deleteListRecord(res, db, user, action === 'category' ? 'categories' : action === 'item' ? 'items' : 'deals', b.id, `${action.toUpperCase()}_DELETED`); } if (action === 'payment') { requirePerm(db, user, 'admin.payments'); return deleteListRecord(res, db, user, 'paymentMethods', b.id, 'PAYMENT_METHOD_DELETED'); } if (action === 'table') { requirePerm(db, user, 'admin.tables'); return deleteListRecord(res, db, user, 'tables', b.id, 'TABLE_DELETED'); } if (action === 'taker') { requirePerm(db, user, 'admin.staff'); return deleteListRecord(res, db, user, 'orderTakers', b.id, 'ORDER_TAKER_DELETED'); } if (action === 'user') { requirePerm(db, user, 'admin.users'); return deleteListRecord(res, db, user, 'users', b.id, 'USER_DELETED'); } if (action === 'role') { requirePerm(db, user, 'admin.roles'); return deleteListRecord(res, db, user, 'roles', b.id, 'ROLE_DELETED'); } }
 
     if (pathname === '/api/reports' && req.method === 'GET') { requirePerm(db, user, 'reports.view'); return send(res, 200, { ok: true, data: reportData(db, query) }); }
     if (pathname === '/api/export' && req.method === 'GET') { requirePerm(db, user, 'reports.export'); const rd = reportData(db, query); const rows = [['Bill No','Date','Order Type','Table','Customer','Mobile','Order Taker','Cashier','Subtotal','Discount','Delivery Fee','Total','Payments']].concat(rd.orders.map(o => [o.number,o.date,o.type,o.table,o.customer,o.mobile,o.orderTaker,o.cashier,o.subtotal,o.discount,o.deliveryFee,o.total,o.payments])); const csv = rows.map(r => r.map(v => `"${String(v ?? '').replace(/"/g,'""')}"`).join(',')).join('\n'); return sendText(res, 200, csv, 'text/csv; charset=utf-8', { 'Content-Disposition': `attachment; filename="swifttill-report-${Date.now()}.csv"` }); }
-    if (pathname === '/api/backup/download' && req.method === 'GET') { requirePerm(db, user, 'backup.manage'); audit(db, user, 'BACKUP_DOWNLOADED', { at: now() }); await saveDb(db); return sendText(res, 200, JSON.stringify({ exportedAt: now(), app: 'SwiftTill POS', db }, null, 2), 'application/json; charset=utf-8', { 'Content-Disposition': `attachment; filename="swifttill-backup-${Date.now()}.json"` }); }
+    if (pathname === '/api/backup/status' && req.method === 'GET') { requirePerm(db, user, 'backup.manage'); return send(res, 200, { ok: true, backup: backupSummary(db) }); }
+    if (pathname === '/api/backup/create' && req.method === 'POST') { requirePerm(db, user, 'backup.manage'); const b = await parseBody(req); const rec = await createBackupSnapshot(db, user, b.type || 'manual'); await saveDb(db); return send(res, 200, { ok: true, backup: rec, summary: backupSummary(db) }); }
+    if (pathname === '/api/backup/download' && req.method === 'GET') { requirePerm(db, user, 'backup.manage'); const rec = await createBackupSnapshot(db, user, 'manual'); await saveDb(db); return sendText(res, 200, JSON.stringify({ exportedAt: now(), app: 'SwiftTill POS', backup: rec, db }, null, 2), 'application/json; charset=utf-8', { 'Content-Disposition': `attachment; filename="swifttill-backup-${Date.now()}.json"` }); }
     if (pathname === '/api/backup/restore' && req.method === 'POST') { requirePerm(db, user, 'backup.manage'); const b = await parseBody(req); const next = b.db || b; if (!next.settings || !Array.isArray(next.orders) || !Array.isArray(next.items)) throw Object.assign(new Error('Invalid backup'), { status: 422 }); audit(next, user, 'BACKUP_RESTORED', { at: now() }); await saveDb(next); return send(res, 200, { ok: true }); }
     send(res, 404, { ok: false, error: 'API not found' });
   } catch (err) { send(res, err.status || 500, { ok: false, error: err.message || 'Server error' }); }
