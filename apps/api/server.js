@@ -14,7 +14,7 @@ const STORAGE_DIR = path.join(ROOT, 'storage', 'uploads');
 const DB_PATH = path.join(DATA_DIR, 'db.json');
 const PORT = Number(process.env.PORT || 5174);
 const TOKENS = new Map();
-const APP_VERSION = '22.0.0-structured-reports-export-print';
+const APP_VERSION = '23.0.0-professional-pos-reports';
 const CLOUD_STATE_KEY = process.env.SWIFTTILL_STATE_KEY || 'swift-till-main';
 let cloudStateCache = null;
 let cloudStateInitPromise = null;
@@ -487,7 +487,7 @@ async function handleApi(req, res, pathname, query) {
     if (pathname === '/api/env-check' && req.method === 'GET') return send(res, 200, { ok: true, environment: { nodeEnv: process.env.NODE_ENV || 'development', databaseUrl: hasDatabaseUrl() ? 'loaded' : 'missing', dataStore: shouldUseCloudState() ? 'postgresql-cloud-state' : 'local-json', r2: hasR2Config() ? 'configured' : 'missing', production: productionMode() }, note: 'Safe status only. No secrets are returned.' });
     const db = await loadDb();
     assertOrderEngineState(db);
-    if (pathname === '/api/order-engine/status' && req.method === 'GET') return send(res, 200, { ok: true, version: APP_VERSION, store: shouldUseCloudState() ? 'postgresql-cloud-state' : 'local-json', rules: { oneTableOneActiveDineInOrder: true, paymentChangeCashOnly: true, paidOrdersLocked: true, tableReleasedAfterFullPayment: true, synchronousPersistence: true, hardcodedBusinessData: false, zeroPriceBlocked: true, emptyHoldBlocked: true, unpaidBillPrint: true, printAreaSafe: true, reportsVisible: true, mediaCleanup: true, automaticBackups: true, reportHistoryPreservedAfterItemDelete: true, fastUiNoFullScreenBlock: true, reportsAdminPanelFixed: true, cloudCredentialsHiddenFromClient: true, directPrintAgentDefault: true, softBusyIndicator: true, structuredReports: true, reportSubMenus: true, reportSpecificFilters: true, excelPerReport: true, billStyleReportPrint: true }, counts: { openOrders: db.orders.filter(o => ['OPEN','HELD'].includes(o.status) && hasBillLines(o)).length, paidOrders: db.orders.filter(o => o.status === 'PAID').length, categories: db.categories.length, items: db.items.length, pricedActiveItems: activePricedItems(db).length, deals: db.deals.length, pricedActiveDeals: activePricedDeals(db).length, tables: db.tables.length } });
+    if (pathname === '/api/order-engine/status' && req.method === 'GET') return send(res, 200, { ok: true, version: APP_VERSION, store: shouldUseCloudState() ? 'postgresql-cloud-state' : 'local-json', rules: { oneTableOneActiveDineInOrder: true, paymentChangeCashOnly: true, paidOrdersLocked: true, tableReleasedAfterFullPayment: true, synchronousPersistence: true, hardcodedBusinessData: false, zeroPriceBlocked: true, emptyHoldBlocked: true, unpaidBillPrint: true, printAreaSafe: true, reportsVisible: true, mediaCleanup: true, automaticBackups: true, reportHistoryPreservedAfterItemDelete: true, fastUiNoFullScreenBlock: true, reportsAdminPanelFixed: true, cloudCredentialsHiddenFromClient: true, directPrintAgentDefault: true, softBusyIndicator: true, structuredReports: true, reportSubMenus: true, reportSpecificFilters: true, excelPerReport: true, billStyleReportPrint: true, professionalReports: true, reportTotalsFooters: true, xzCloseoutSections: true, cashDrawerReconciliation: true }, counts: { openOrders: db.orders.filter(o => ['OPEN','HELD'].includes(o.status) && hasBillLines(o)).length, paidOrders: db.orders.filter(o => o.status === 'PAID').length, categories: db.categories.length, items: db.items.length, pricedActiveItems: activePricedItems(db).length, deals: db.deals.length, pricedActiveDeals: activePricedDeals(db).length, tables: db.tables.length } });
     if (pathname === '/api/login' && req.method === 'POST') { const body = await parseBody(req); const user = db.users.find(u => u.email.toLowerCase() === String(body.email || '').toLowerCase() && u.password === body.password && u.active); if (!user) return send(res, 401, { ok: false, error: 'Invalid login' }); const token = crypto.randomBytes(24).toString('hex'); TOKENS.set(token, { userId: user.id, createdAt: Date.now() }); audit(db, user, 'LOGIN', { email: user.email }); await saveDb(db); return send(res, 200, { ok: true, token, user: publicUser(db, user) }); }
     const user = requireAuth(req, db);
     if (pathname === '/api/account/change-password' && req.method === 'POST') { const b = await parseBody(req); const u = db.users.find(x => x.id === user.id); if (!u) throw Object.assign(new Error('User not found'), { status: 404 }); if (!b.currentPassword || b.currentPassword !== u.password) throw Object.assign(new Error('Current password is incorrect'), { status: 403 }); if (!b.newPassword || String(b.newPassword).length < 6) throw Object.assign(new Error('New password must be at least 6 characters'), { status: 422 }); if (b.newPassword === 'admin123' || b.newPassword === 'manager123' || b.newPassword === 'cashier123') throw Object.assign(new Error('Default password is not allowed for production'), { status: 422 }); u.password = String(b.newPassword); audit(db, user, 'PASSWORD_CHANGED', { userId: u.id, email: u.email }); await saveDb(db); return send(res, 200, { ok: true }); }
@@ -558,7 +558,7 @@ async function handleApi(req, res, pathname, query) {
 
     if (pathname === '/api/print-agent/sample' && req.method === 'GET') { requirePerm(db, user, 'admin.printer'); const sampleOrder = { number: 'TEST', type: 'TEST', status: 'DRAFT', lines: [{ name: 'Print Test Line', qty: 1, price: 1, modifiers: [] }], payments: [], createdAt: now(), cashierName: user.name }; return send(res, 200, { ok: true, receipt: buildReceipt(db, sampleOrder), printAgent: printAgentStatus(db) }); }
     if (pathname === '/api/reports' && req.method === 'GET') { requirePerm(db, user, 'reports.view'); return send(res, 200, { ok: true, data: reportData(db, query) }); }
-    if (pathname === '/api/export' && req.method === 'GET') { requirePerm(db, user, 'reports.export'); const rd = reportData(db, query); const type = String(query.type || 'daily'); let rows; if (type === 'itemwise') rows = [['Item','Category','Qty','Sales']].concat(rd.itemWise.map(i => [i.item, i.category, i.qty, i.sales])); else if (type === 'category') rows = [['Category','Sales']].concat(Object.entries(rd.categoryWise).map(([k,v]) => [k,v])); else if (type === 'payment') rows = [['Payment Mode','Amount']].concat(Object.entries(rd.paymentWise).map(([k,v]) => [k,v])); else if (type === 'discount') rows = [['Bill No','Date','Customer','Cashier','Discount','Total','Payments']].concat(rd.orders.filter(o => Number(o.discount||0)>0).map(o => [o.number,o.date,o.customer,o.cashier,o.discount,o.total,o.payments])); else if (type === 'voidrefund') rows = [['Refund Bill','Date','Method','Amount','Reason','By']].concat((rd.refunds||[]).map(r => [r.orderNumber,r.createdAt,r.method,r.amount,r.reason,r.by])); else if (type === 'ordertype') rows = [['Order Type','Sales']].concat(Object.entries(rd.orderTypeWise).map(([k,v]) => [k,v])); else rows = [['Bill No','Date','Order Type','Table','Customer','Mobile','Order Taker','Cashier','Subtotal','Discount','Delivery Fee','Total','Payments']].concat(rd.orders.map(o => [o.number,o.date,o.type,o.table,o.customer,o.mobile,o.orderTaker,o.cashier,o.subtotal,o.discount,o.deliveryFee,o.total,o.payments])); const csv = rows.map(r => r.map(v => `"${String(v ?? '').replace(/"/g,'""')}"`).join(',')).join('\n'); return sendText(res, 200, csv, 'text/csv; charset=utf-8', { 'Content-Disposition': `attachment; filename="swifttill-${type}-report-${Date.now()}.csv"` }); }
+    if (pathname === '/api/export' && req.method === 'GET') { requirePerm(db, user, 'reports.export'); const rd = reportData(db, query); const type = String(query.type || 'daily'); let rows; if (type === 'itemwise') rows = [['Item','Category','Qty Sold','Gross','Discount Share','Net Sales']].concat(rd.itemWise.map(i => [i.item,i.category,i.qty,i.gross,i.discountShare,i.net])); else if (type === 'category') rows = [['Category','Qty Sold','Gross Sales','Net Sales']].concat(rd.categoryDetails.map(i => [i.category,i.qty,i.gross,i.net])); else if (type === 'payment') rows = [['Payment Mode','Transactions','Received','Change Returned','Net Revenue']].concat(rd.paymentDetails.map(p => [p.method,p.count,p.received,p.change,p.revenue])); else if (type === 'discount') rows = [['Bill No','Date','Order Type','Cashier','Discount Type','Discount Value','Discount Amount','Bill Total']].concat((rd.discountWise.rows||[]).map(o => [o.number,o.date,o.type,o.cashier,o.discountType,o.discountValue,o.discount,o.total])); else if (type === 'voidrefund') rows = [['Type','Bill','Date','Method/Status','Amount','Reason','By']].concat((rd.refunds||[]).map(r => ['REFUND',r.orderNumber,r.createdAt,r.method,r.amount,r.reason,r.by])).concat((rd.voidOrders||[]).map(o => ['VOID',o.number,o.voidedAt||o.createdAt,o.status,totals(o).total,o.voidReason,o.cashierName])); else if (type === 'ordertype') rows = [['Order Type','Orders','Guests','Gross','Discount','Net','Average Bill']].concat(rd.orderTypeDetails.map(o => [o.type,o.orders,o.guests,o.gross,o.discount,o.net,o.orders?money(o.net/o.orders):0])); else if (type === 'x' || type === 'z') rows = [['Section','Value'],['Report',type.toUpperCase()],['Shift No',rd.shiftSummary.shiftNumber],['Shift Status',rd.shiftSummary.shiftStatus],['Opening Cash',rd.shiftSummary.openingCash],['Cash Sales',rd.shiftSummary.cashSales],['Cash Refunds',rd.shiftSummary.cashRefunds],['Expected Cash',rd.shiftSummary.expectedCash],['Counted Cash',rd.shiftSummary.countedCash ?? ''],['Difference',rd.shiftSummary.difference ?? ''],['Orders',rd.summary.orders],['Gross Sales',rd.summary.gross],['Discounts',rd.summary.discounts],['Refunds',rd.summary.refunds],['Net Sales',rd.summary.net],[],['Payment Mode','Transactions','Received','Change','Revenue']].concat(rd.paymentDetails.map(p=>[p.method,p.count,p.received,p.change,p.revenue])); else rows = [['Bill No','Date','Order Type','Table','Guests','Customer','Mobile','Order Taker','Cashier','Subtotal','Discount','Delivery Fee','Total','Payments']].concat(rd.orders.map(o => [o.number,o.date,o.type,o.table,o.guests,o.customer,o.mobile,o.orderTaker,o.cashier,o.subtotal,o.discount,o.deliveryFee,o.total,o.payments])); const csv = rows.map(r => r.map(v => `"${String(v ?? '').replace(/"/g,'""')}"`).join(',')).join('\n'); return sendText(res, 200, csv, 'text/csv; charset=utf-8', { 'Content-Disposition': `attachment; filename="swifttill-${type}-report-${Date.now()}.csv"` }); }
     if (pathname === '/api/backup/status' && req.method === 'GET') { requirePerm(db, user, 'backup.manage'); return send(res, 200, { ok: true, backup: backupSummary(db) }); }
     if (pathname === '/api/backup/create' && req.method === 'POST') { requirePerm(db, user, 'backup.manage'); const b = await parseBody(req); const rec = await createBackupSnapshot(db, user, b.type || 'manual'); await saveDb(db); return send(res, 200, { ok: true, backup: rec, summary: backupSummary(db) }); }
     if (pathname === '/api/backup/download' && req.method === 'GET') { requirePerm(db, user, 'backup.manage'); const rec = await createBackupSnapshot(db, user, 'manual'); await saveDb(db); return sendText(res, 200, JSON.stringify({ exportedAt: now(), app: 'SwiftTill POS', backup: rec, db }, null, 2), 'application/json; charset=utf-8', { 'Content-Disposition': `attachment; filename="swifttill-backup-${Date.now()}.json"` }); }
@@ -569,3 +569,87 @@ async function handleApi(req, res, pathname, query) {
 function staticServe(req, res, pathname) { let filePath = pathname === '/' ? path.join(PUBLIC_DIR, 'index.html') : path.join(PUBLIC_DIR, decodeURIComponent(pathname)); if (!filePath.startsWith(PUBLIC_DIR)) return sendText(res, 403, 'Forbidden'); if (!fs.existsSync(filePath) || fs.statSync(filePath).isDirectory()) filePath = path.join(PUBLIC_DIR, 'index.html'); const ext = path.extname(filePath).toLowerCase(); const types = { '.html':'text/html; charset=utf-8', '.css':'text/css; charset=utf-8', '.js':'application/javascript; charset=utf-8', '.png':'image/png', '.jpg':'image/jpeg', '.jpeg':'image/jpeg', '.svg':'image/svg+xml', '.ico':'image/x-icon', '.webmanifest':'application/manifest+json' }; const noStore = ['.html','.js','.css','.webmanifest'].includes(ext); res.writeHead(200, { 'Content-Type': types[ext] || 'application/octet-stream', 'Cache-Control': noStore ? 'no-store, max-age=0' : 'public, max-age=3600' }); fs.createReadStream(filePath).pipe(res); }
 const server = http.createServer(async (req, res) => { const parsed = url.parse(req.url, true); if (parsed.pathname.startsWith('/api/')) return handleApi(req, res, parsed.pathname, parsed.query); staticServe(req, res, parsed.pathname); });
 server.listen(PORT, async () => { ensureDir(path.join(PUBLIC_DIR, 'uploads')); ensureDir(STORAGE_DIR); try { await loadDb(); } catch (e) { console.error('Startup data store check failed:', e.message); if (productionMode()) process.exitCode = 1; } console.log(`SwiftTill POS running: http://localhost:${PORT}`); console.log(`Runtime env: DATABASE_URL=${hasDatabaseUrl() ? 'loaded' : 'missing'}, DATA_STORE=${shouldUseCloudState() ? 'postgresql-cloud-state' : 'local-json'}, R2=${hasR2Config() ? 'configured' : 'missing'}`); console.log('Login: admin@swifttill.local / admin123'); });
+
+
+/* V23 professional POS reports rebuild: closeout-grade summaries, totals footers and richer grouped rows. */
+function reportData(db, filters = {}) {
+  const from = filters.from || '';
+  const to = filters.to || '';
+  const wantPayment = String(filters.paymentMode || '').toLowerCase();
+  const wantItem = filters.itemId || '';
+  const wantCategory = filters.categoryId || '';
+  const wantOrderType = filters.orderType || '';
+  const wantCashier = filters.cashierId || '';
+  const wantTaker = filters.orderTakerId || '';
+  const wantShift = filters.shiftId || '';
+  const discountOnly = filters.discountOnly === '1' || filters.discountOnly === true;
+  const refundOnly = filters.refundOnly === '1' || filters.refundOnly === true;
+  const allPaid = db.orders.filter(o => o.status === 'PAID' && between(o.paidAt || o.createdAt, from, to));
+  let paid = allPaid.filter(o => {
+    if (wantPayment && !(o.payments || []).some(p => String(p.method || '').toLowerCase() === wantPayment)) return false;
+    if (wantItem && !(o.lines || []).some(l => l.itemId === wantItem || l.dealId === wantItem)) return false;
+    if (wantCategory && !(o.lines || []).some(l => l.categoryId === wantCategory)) return false;
+    if (wantOrderType && o.type !== wantOrderType) return false;
+    if (wantCashier && o.cashierId !== wantCashier) return false;
+    if (wantTaker && o.orderTakerId !== wantTaker) return false;
+    if (wantShift) {
+      const shift = db.shifts.find(s => s.id === wantShift);
+      if (!shift) return false;
+      const t = new Date(o.paidAt || o.createdAt).getTime();
+      const a = new Date(shift.openedAt).getTime();
+      const b = shift.closedAt ? new Date(shift.closedAt).getTime() : Date.now() + 86400000;
+      if (t < a || t > b) return false;
+    }
+    if (discountOnly && totals(o).discount <= 0) return false;
+    return true;
+  });
+  let refunds = db.refunds.filter(r => between(r.createdAt, from, to));
+  if (refundOnly) {
+    const refundOrderIds = new Set(refunds.map(r => r.orderId));
+    paid = paid.filter(o => refundOrderIds.has(o.id));
+  }
+  const gross = paid.reduce((s,o) => s + totals(o).subtotal + totals(o).deliveryFee, 0);
+  const discounts = paid.reduce((s,o) => s + totals(o).discount, 0);
+  const refundAmount = refunds.reduce((s,r) => s + Number(r.amount || 0), 0);
+  const net = paid.reduce((s,o) => s + totals(o).total, 0) - refundAmount;
+  const paymentWise = {}, paymentDetails = {}, itemWise = {}, categoryWise = {}, categoryDetails = {}, orderTypeWise = {}, orderTypeDetails = {}, discountRows = [];
+  let guests = 0, changeReturned = 0, totalReceived = 0;
+  for (const o of paid) {
+    const ot = totals(o);
+    guests += Number(o.guests || 0);
+    orderTypeWise[o.type] = money((orderTypeWise[o.type] || 0) + ot.total);
+    orderTypeDetails[o.type] ||= { type: o.type, orders: 0, guests: 0, gross: 0, discount: 0, net: 0 };
+    orderTypeDetails[o.type].orders += 1; orderTypeDetails[o.type].guests += Number(o.guests || 0); orderTypeDetails[o.type].gross = money(orderTypeDetails[o.type].gross + ot.subtotal + ot.deliveryFee); orderTypeDetails[o.type].discount = money(orderTypeDetails[o.type].discount + ot.discount); orderTypeDetails[o.type].net = money(orderTypeDetails[o.type].net + ot.total);
+    if (ot.discount > 0) discountRows.push({ number: o.number, date: o.paidAt, type: o.type, cashier: o.cashierName || '', discountType: o.discountType || '', discountValue: o.discountValue || 0, discount: ot.discount, total: ot.total });
+    for (const p of (o.payments || [])) {
+      const method = p.method || 'Unknown';
+      paymentWise[method] = money((paymentWise[method] || 0) + Number(p.amount || 0));
+      paymentDetails[method] ||= { method, count: 0, received: 0, change: 0, revenue: 0 };
+      paymentDetails[method].count += 1;
+      paymentDetails[method].received = money(paymentDetails[method].received + Number(p.received ?? p.amount ?? 0));
+      paymentDetails[method].change = money(paymentDetails[method].change + Number(p.change || 0));
+      paymentDetails[method].revenue = money(paymentDetails[method].revenue + Number(p.amount || 0));
+      totalReceived = money(totalReceived + Number(p.received ?? p.amount ?? 0));
+      changeReturned = money(changeReturned + Number(p.change || 0));
+    }
+    for (const l of (o.lines || [])) {
+      const mods = (l.modifiers || []).reduce((a,m) => a + Number(m.price || 0), 0);
+      const qty = Number(l.qty) || 0;
+      const grossLine = money(((Number(l.price) || 0) + mods) * qty);
+      const cat = db.categories.find(c => c.id === l.categoryId)?.name || l.categoryName || (l.kind === 'DEAL' ? 'Deals' : 'Uncategorized');
+      itemWise[l.name] ||= { item: l.name, category: cat, qty: 0, gross: 0, discountShare: 0, net: 0 };
+      itemWise[l.name].qty += qty; itemWise[l.name].gross = money(itemWise[l.name].gross + grossLine);
+      categoryWise[cat] = money((categoryWise[cat] || 0) + grossLine);
+      categoryDetails[cat] ||= { category: cat, qty: 0, gross: 0, net: 0 };
+      categoryDetails[cat].qty += qty; categoryDetails[cat].gross = money(categoryDetails[cat].gross + grossLine);
+    }
+  }
+  for (const row of Object.values(itemWise)) { row.discountShare = paid.length ? money(discounts * (row.gross / Math.max(1, gross))) : 0; row.net = money(row.gross - row.discountShare); }
+  for (const row of Object.values(categoryDetails)) row.net = money(row.gross - (paid.length ? discounts * (row.gross / Math.max(1, gross)) : 0));
+  const shiftForSummary = wantShift ? db.shifts.find(s => s.id === wantShift) : activeShift(db);
+  const cashSalesForSummary = paymentWise.Cash || 0;
+  const openingCashForSummary = shiftForSummary ? Number(shiftForSummary.openingCash || 0) : 0;
+  const expectedCashForSummary = money(openingCashForSummary + cashSalesForSummary - refunds.filter(r => String(r.method||'Cash')==='Cash').reduce((s,r)=>s+Number(r.amount||0),0));
+  const orders = paid.map(o => ({ number: o.number, date: o.paidAt, type: o.type, table: db.tables.find(t => t.id === o.tableId)?.name || '', customer: o.customerName || '', mobile: o.mobile || '', cashier: o.cashierName || '', orderTaker: o.orderTakerName || '', guests: o.guests || 0, subtotal: totals(o).subtotal, discount: totals(o).discount, deliveryFee: totals(o).deliveryFee, total: totals(o).total, payments: (o.payments || []).map(p => `${p.method}:${p.amount}${p.change?` change:${p.change}`:''}`).join(', ') }));
+  return { range: { from, to }, filters, shiftSummary: { shiftId: shiftForSummary?.id || '', shiftNumber: shiftForSummary?.number || '', shiftStatus: shiftForSummary?.status || '', openingCash: money(openingCashForSummary), cashSales: money(cashSalesForSummary), cashRefunds: money(refunds.filter(r => String(r.method||'Cash')==='Cash').reduce((s,r)=>s+Number(r.amount||0),0)), expectedCash: expectedCashForSummary, countedCash: shiftForSummary?.countedCash ?? null, difference: shiftForSummary?.difference ?? null, openedAt: shiftForSummary?.openedAt || '', closedAt: shiftForSummary?.closedAt || '' }, summary: { orders: paid.length, guests, gross: money(gross), discounts: money(discounts), refunds: money(refundAmount), net: money(net), averageBill: paid.length ? money(net / paid.length) : 0, averageGuest: guests ? money(net / guests) : 0, totalReceived: money(totalReceived), changeReturned }, paymentWise, paymentDetails: Object.values(paymentDetails), itemWise: Object.values(itemWise).sort((a,b) => b.net - a.net), categoryWise, categoryDetails: Object.values(categoryDetails).sort((a,b)=>b.net-a.net), orderTypeWise, orderTypeDetails: Object.values(orderTypeDetails), discountWise: { count: discountRows.length, amount: money(discounts), rows: discountRows }, refunds, voidOrders: db.orders.filter(o => o.status === 'VOID' && between(o.voidedAt || o.createdAt, from, to)), orders };
+}

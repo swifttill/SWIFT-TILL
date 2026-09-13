@@ -577,3 +577,114 @@ function renderCloud(c){ c.innerHTML=`<div class="card subcard"><h3>Cloud settin
 function renderBackup(c){ const b=state.backup||{}; c.innerHTML=`<div class="module-title"><div><h3>Backup, History & Retention</h3><p class="muted-note">Orders/reports history stays in Neon. Daily backup snapshots use Cloudflare R2 when configured.</p></div></div><div class="grid2"><div class="card subcard"><h3>Backup Status</h3><p>Mode: <b>${esc(b.mode||'cloud/database')}</b></p><p>Backups indexed: <b>${b.total||0}</b></p><p>Daily retention: <b>${b.dailyRetentionDays||30} days</b></p><p>Monthly retention: <b>${b.monthlyRetentionMonths||12} months</b></p><p>Latest: <b>${b.latest?new Date(b.latest.exportedAt).toLocaleString():'Not created yet'}</b></p><button class="ghost-btn" id="refreshBackupStatus">Refresh Status</button></div><div class="card subcard"><h3>Create Backup</h3><p class="muted-note">Creates a R2 JSON backup if R2 is configured and also indexes it in Neon state.</p><button class="primary-btn" id="createBackup">Create Cloud Backup</button><button class="ghost-btn mt" id="downloadBackup">Download Backup JSON</button></div><div class="card subcard"><h3>Restore Backup</h3><p class="muted-note">Use only with a SwiftTill backup JSON file. Paid order history is restored exactly from file.</p><input type="file" id="restoreFile" accept="application/json"><button class="danger-btn mt" id="restoreBtn">Restore</button></div><div class="card subcard"><h3>History Rule</h3><p>Deleting menu item/category/deal removes it from live menu only.</p><p>Old paid bills and reports keep line name, price and category snapshot.</p><p>Replacing/deleting media removes old R2 object when it is not reused.</p></div></div>`; $('#refreshBackupStatus').onclick=async()=>{try{const j=await api('/api/backup/status',null,'GET'); state.backup=j.backup; renderBackup(c);}catch(e){toast(e.message,true)}}; $('#createBackup').onclick=async()=>{try{const j=await api('/api/backup/create',{type:'manual'}); state.backup=j.summary; toast('Backup created'); renderBackup(c);}catch(e){toast(e.message,true)}}; $('#downloadBackup').onclick=()=>downloadApi('/api/backup/download',`swifttill-backup-${Date.now()}.json`).catch(e=>toast(e.message,true)); $('#restoreBtn').onclick=()=>{const file=$('#restoreFile').files[0];if(!file)return toast('Choose backup file',true);const r=new FileReader();r.onload=async()=>{try{await api('/api/backup/restore',JSON.parse(r.result));await loadState();renderShell();toast('Backup restored');}catch(e){toast(e.message,true)}};r.readAsText(file);}; }
 setInterval(refreshLiveTimers,1000);
 boot();
+
+/* V23 Professional POS Reports: rebuilt screen, totals, closeout layout and receipt-style print. */
+function currentReportTitle(){
+  return ({daily:'Daily Sales Summary',itemwise:'Item Wise Sales Report',category:'Category Wise Sales Report',payment:'Payment Method Reconciliation',custom:'Custom Detailed Sales Report',x:'X Report - Live Shift',y:'Y Report - Period Summary',z:'Z Report - End Shift Closeout',discount:'Discount Report',voidrefund:'Void / Refund Report',ordertype:'Order Type Performance'}[reportType] || 'Sales Report');
+}
+function moneyCell(v){ return money(Number(v||0)); }
+function reportHeaderHtml(r){
+  const range = `${r.range?.from || 'Start'} to ${r.range?.to || 'Now'}`;
+  return `<div class="receipt report-receipt wide-report professional-report"><div class="report-slip-head"><h3>${esc(state.settings.businessName||'SwiftTill POS')}</h3><div class="c">${esc(state.settings.branchName||'Main Branch')}</div><div class="c small">${esc(state.settings.address||'')} ${state.settings.phone?'• '+esc(state.settings.phone):''}</div></div><div class="sep"></div><div class="r"><span>Report</span><b>${esc(currentReportTitle())}</b></div><div class="r"><span>Range</span><span>${esc(range)}</span></div><div class="r"><span>Printed</span><span>${new Date().toLocaleString()}</span></div><div class="r"><span>Cashier/User</span><span>${esc(state.user?.name||'')}</span></div><div class="sep"></div>`;
+}
+function metric(label,value,sub=''){ return `<div class="pro-metric"><span>${esc(label)}</span><b>${esc(value)}</b>${sub?`<small>${esc(sub)}</small>`:''}</div>`; }
+function reportSummaryCards(r){
+  const s=r.summary||{};
+  return `<div class="pro-summary-grid">
+    ${metric('Gross Sales',moneyCell(s.gross),'Before discounts/refunds')}
+    ${metric('Discounts',moneyCell(s.discounts),'Bill level discount')}
+    ${metric('Refunds',moneyCell(s.refunds),'Returned amount')}
+    ${metric('Net Sales',moneyCell(s.net),'Final revenue')}
+    ${metric('Total Orders',String(s.orders||0),'Paid bills')}
+    ${metric('Guests',String(s.guests||0),'Dine-in guests')}
+    ${metric('Average Bill',moneyCell(s.averageBill),'Net ÷ orders')}
+    ${metric('Change Returned',moneyCell(s.changeReturned),'Cash change only')}
+  </div>`;
+}
+function rowsHtml(rows, cols, totals){
+  const body = rows.length ? rows.map(row=>`<tr>${cols.map(c=>`<td class="${c[3]||''}">${esc(c[2]?c[2](row[c[1]],row):row[c[1]])}</td>`).join('')}</tr>`).join('') : `<tr><td colspan="${cols.length}" class="empty-td">No data for selected filters.</td></tr>`;
+  const foot = totals ? `<tfoot><tr>${cols.map((c,i)=>`<th>${esc(totals[c[1]] ?? (i===0?'TOTAL':''))}</th>`).join('')}</tr></tfoot>` : '';
+  return `<div class="report-table-wrap"><table class="admin-table pro-table"><thead><tr>${cols.map(c=>`<th>${esc(c[0])}</th>`).join('')}</tr></thead><tbody>${body}</tbody>${foot}</table></div>`;
+}
+function sumRows(rows,k){ return money((rows||[]).reduce((s,r)=>s+Number(r[k]||0),0)); }
+function billDetailsTable(rows){
+  return `<div class="card subcard report-block"><h3>Bill Details</h3>${rowsHtml(rows||[],[
+    ['Bill','number'],['Date','date',v=>v?new Date(v).toLocaleString():'' ],['Type','type',v=>formatType(v)],['Table','table'],['Guest','guests'],['Customer','customer'],['Cashier','cashier'],['Subtotal','subtotal',moneyCell,'num'],['Discount','discount',moneyCell,'num'],['Delivery','deliveryFee',moneyCell,'num'],['Total','total',moneyCell,'num'],['Payments','payments']
+  ], { number:'TOTAL', subtotal:moneyCell(sumRows(rows,'subtotal')), discount:moneyCell(sumRows(rows,'discount')), deliveryFee:moneyCell(sumRows(rows,'deliveryFee')), total:moneyCell(sumRows(rows,'total')) })}</div>`;
+}
+function paymentSection(r){ return `<div class="card subcard report-block"><h3>Payments / Cash Reconciliation</h3>${rowsHtml(r.paymentDetails||[],[['Method','method'],['Transactions','count'],['Received','received',moneyCell,'num'],['Change','change',moneyCell,'num'],['Revenue','revenue',moneyCell,'num']],{method:'TOTAL',count:(r.paymentDetails||[]).reduce((s,p)=>s+Number(p.count||0),0),received:moneyCell(sumRows(r.paymentDetails,'received')),change:moneyCell(sumRows(r.paymentDetails,'change')),revenue:moneyCell(sumRows(r.paymentDetails,'revenue'))})}</div>`; }
+function shiftCashSection(r){ const sh=r.shiftSummary||{}; return `<div class="card subcard report-block"><h3>Cash Drawer / Shift Closeout</h3><div class="closeout-grid">
+  ${metric('Shift',sh.shiftNumber?`#${sh.shiftNumber}`:'No active shift',sh.shiftStatus||'')}
+  ${metric('Opening Cash',moneyCell(sh.openingCash))}
+  ${metric('Cash Sales',moneyCell(sh.cashSales))}
+  ${metric('Cash Refunds',moneyCell(sh.cashRefunds))}
+  ${metric('Expected Cash',moneyCell(sh.expectedCash),'Opening + cash sales - cash refunds')}
+  ${metric('Counted Cash',sh.countedCash==null?'Not entered':moneyCell(sh.countedCash))}
+  ${metric('Difference',sh.difference==null?'Not closed':moneyCell(sh.difference))}
+</div></div>`; }
+function reportBodyHtml(r){
+  const s=r.summary||{};
+  if(reportType==='itemwise') return `${reportSummaryCards(r)}<div class="card subcard report-block"><h3>Item Wise Sales</h3>${rowsHtml(r.itemWise||[],[['Item','item'],['Category','category'],['Qty Sold','qty'],['Gross','gross',moneyCell,'num'],['Discount Share','discountShare',moneyCell,'num'],['Net Sales','net',moneyCell,'num']],{item:'TOTAL',qty:sumRows(r.itemWise,'qty'),gross:moneyCell(sumRows(r.itemWise,'gross')),discountShare:moneyCell(sumRows(r.itemWise,'discountShare')),net:moneyCell(sumRows(r.itemWise,'net'))})}</div>`;
+  if(reportType==='category') return `${reportSummaryCards(r)}<div class="card subcard report-block"><h3>Category Wise Sales</h3>${rowsHtml(r.categoryDetails||[],[['Category','category'],['Qty Sold','qty'],['Gross Sales','gross',moneyCell,'num'],['Net Sales','net',moneyCell,'num']],{category:'TOTAL',qty:sumRows(r.categoryDetails,'qty'),gross:moneyCell(sumRows(r.categoryDetails,'gross')),net:moneyCell(sumRows(r.categoryDetails,'net'))})}</div>`;
+  if(reportType==='payment') return `${reportSummaryCards(r)}${paymentSection(r)}${billDetailsTable(r.orders)}`;
+  if(reportType==='discount') return `${reportSummaryCards(r)}<div class="card subcard report-block"><h3>Discounted Bills</h3>${rowsHtml(r.discountWise?.rows||[],[['Bill','number'],['Date','date',v=>v?new Date(v).toLocaleString():'' ],['Type','type',v=>formatType(v)],['Cashier','cashier'],['Discount Type','discountType'],['Discount Value','discountValue'],['Discount','discount',moneyCell,'num'],['Bill Total','total',moneyCell,'num']],{number:'TOTAL',discount:moneyCell(r.discountWise?.amount||0),total:moneyCell(sumRows(r.discountWise?.rows||[],'total'))})}</div>`;
+  if(reportType==='voidrefund') return `${reportSummaryCards(r)}<div class="grid2"><div class="card subcard report-block"><h3>Refunds</h3>${rowsHtml(r.refunds||[],[['Bill','orderNumber'],['Date','createdAt',v=>v?new Date(v).toLocaleString():'' ],['Method','method'],['Amount','amount',moneyCell,'num'],['Reason','reason'],['By','by']],{orderNumber:'TOTAL',amount:moneyCell(sumRows(r.refunds,'amount'))})}</div><div class="card subcard report-block"><h3>Voids</h3>${rowsHtml(r.voidOrders||[],[['Bill','number'],['Date','voidedAt',v=>v?new Date(v).toLocaleString():'' ],['Reason','voidReason'],['Cashier','cashierName'],['Total','total',v=>'', 'num']])}</div></div>`;
+  if(reportType==='ordertype') return `${reportSummaryCards(r)}<div class="card subcard report-block"><h3>Order Type Performance</h3>${rowsHtml(r.orderTypeDetails||[],[['Type','type',v=>formatType(v)],['Orders','orders'],['Guests','guests'],['Gross','gross',moneyCell,'num'],['Discount','discount',moneyCell,'num'],['Net','net',moneyCell,'num'],['Average Bill','avg',(_,row)=>moneyCell((Number(row.net)||0)/Math.max(1,Number(row.orders)||0)),'num']],{type:'TOTAL',orders:sumRows(r.orderTypeDetails,'orders'),guests:sumRows(r.orderTypeDetails,'guests'),gross:moneyCell(sumRows(r.orderTypeDetails,'gross')),discount:moneyCell(sumRows(r.orderTypeDetails,'discount')),net:moneyCell(sumRows(r.orderTypeDetails,'net'))})}</div>`;
+  if(reportType==='x'||reportType==='z') return `${reportSummaryCards(r)}${shiftCashSection(r)}${paymentSection(r)}<div class="card subcard report-block"><h3>Category Revenue</h3>${rowsHtml(r.categoryDetails||[],[['Category','category'],['Qty','qty'],['Net Sales','net',moneyCell,'num']],{category:'TOTAL',qty:sumRows(r.categoryDetails,'qty'),net:moneyCell(sumRows(r.categoryDetails,'net'))})}</div>${billDetailsTable(r.orders)}`;
+  return `${reportSummaryCards(r)}${shiftCashSection(r)}${paymentSection(r)}<div class="grid2"><div class="card subcard report-block"><h3>Order Types</h3>${rowsHtml(r.orderTypeDetails||[],[['Type','type',v=>formatType(v)],['Orders','orders'],['Net','net',moneyCell,'num']],{type:'TOTAL',orders:sumRows(r.orderTypeDetails,'orders'),net:moneyCell(sumRows(r.orderTypeDetails,'net'))})}</div><div class="card subcard report-block"><h3>Top Items</h3>${rowsHtml((r.itemWise||[]).slice(0,8),[['Item','item'],['Qty','qty'],['Net','net',moneyCell,'num']],{item:'TOTAL',qty:sumRows((r.itemWise||[]).slice(0,8),'qty'),net:moneyCell(sumRows((r.itemWise||[]).slice(0,8),'net'))})}</div></div>${billDetailsTable(r.orders)}`;
+}
+function renderReports(ws){
+  try{
+    const defs = reportDateDefaults(reportType);
+    const paymentOptions=(state.paymentMethods||[]).filter(p=>p.active).map(p=>`<option value="${esc(p.name)}">${esc(p.name)}</option>`).join('');
+    const itemOptions=[...(state.items||[]).map(i=>`<option value="${esc(i.id)}">${esc(i.name)}</option>`),...(state.deals||[]).map(d=>`<option value="${esc(d.id)}">Deal: ${esc(d.name)}</option>`)].join('');
+    const catOptions=(state.categories||[]).filter(c=>c.id!=='cat_all').map(c=>`<option value="${esc(c.id)}">${esc(c.name)}</option>`).join('');
+    const userOptions=(state.users||[]).map(u=>`<option value="${esc(u.id)}">${esc(u.name)}</option>`).join('');
+    const takerOptions=(state.orderTakers||[]).map(t=>`<option value="${esc(t.id)}">${esc(t.name)}</option>`).join('');
+    const shiftOptions=(state.shifts||[]).map(s=>`<option value="${esc(s.id)}">#${s.number} ${s.status}</option>`).join('');
+    ws.innerHTML=`<div class="report-page admin-report-shell pro-report-screen">
+      <div class="module-title"><div><h3>Reports</h3><p class="muted-note">Professional POS sales, cash drawer, item, payment and X/Z closeout reports.</p></div><div class="actions-mini"><button class="ghost-btn" id="exportReport" disabled>Export Excel</button><button class="ghost-btn" id="printReportBtn" disabled>Print</button></div></div>
+      <div class="reports-layout">
+        <div class="report-menu card subcard">
+          <h4>Sales</h4>${reportMenuButton('daily','Daily Summary','Totals + payments')}${reportMenuButton('custom','Custom Detailed','Full bill details')}${reportMenuButton('ordertype','Order Type','Dine-in / takeaway / delivery')}
+          <h4>Menu</h4>${reportMenuButton('itemwise','Item Wise','Qty, gross, net')}${reportMenuButton('category','Category Wise','Category revenue')}
+          <h4>Cash & Payments</h4>${reportMenuButton('payment','Payment Mode','Received / change / revenue')}${reportMenuButton('discount','Discounts','Discounted bills')}${reportMenuButton('voidrefund','Void / Refund','Manager actions')}
+          <h4>Closeout</h4>${reportMenuButton('x','X Report','Live shift snapshot')}${reportMenuButton('y','Y Report','Period summary')}${reportMenuButton('z','Z Report','End-day closeout')}
+        </div>
+        <div class="report-work card subcard">
+          <div class="report-headline"><h3 id="reportTitle">${esc(currentReportTitle())}</h3><span>${esc(state.settings?.businessName||'SwiftTill POS')}</span></div>
+          <div class="report-filter-grid compact-filters" id="reportFilters">
+            <div class="field report-filter date-filter"><label>From</label><input type="date" id="fromDate" value="${defs.from}"></div>
+            <div class="field report-filter date-filter"><label>To</label><input type="date" id="toDate" value="${defs.to}"></div>
+            <div class="field report-filter payment-filter"><label>Payment Mode</label><select id="paymentMode"><option value="">All</option>${paymentOptions}</select></div>
+            <div class="field report-filter ordertype-filter"><label>Order Type</label><select id="orderType"><option value="">All</option><option value="DINE_IN">Dine In</option><option value="DELIVERY">Delivery</option><option value="TAKEAWAY">Takeaway</option></select></div>
+            <div class="field report-filter item-filter"><label>Item / Deal</label><select id="itemId"><option value="">All</option>${itemOptions}</select></div>
+            <div class="field report-filter category-filter"><label>Category</label><select id="categoryFilter"><option value="">All</option>${catOptions}</select></div>
+            <div class="field report-filter cashier-filter"><label>Cashier</label><select id="cashierId"><option value="">All</option>${userOptions}</select></div>
+            <div class="field report-filter taker-filter"><label>Order Taker</label><select id="orderTakerId"><option value="">All</option>${takerOptions}</select></div>
+            <div class="field report-filter shift-filter"><label>Shift</label><select id="shiftId"><option value="">All</option>${shiftOptions}</select></div>
+            <label class="check report-filter discount-filter"><input type="checkbox" id="discountOnly"> Discounted only</label>
+            <label class="check report-filter refund-filter"><input type="checkbox" id="refundOnly"> Refunded only</label>
+            <button class="primary-btn" id="runReport">Run Report</button>
+          </div>
+          <div id="reportResult" class="mt"><div class="empty-cart compact-empty"><b>Select a report.</b><p>Run report to show totals, details, printable closeout and export.</p></div></div>
+        </div>
+      </div></div>`;
+    updateReportFilterVisibility();
+    $$('[data-report-type]').forEach(b=>b.onclick=()=>{ reportType=b.dataset.reportType; renderReports(ws); });
+    $('#runReport').onclick=runReport;
+    $('#printReportBtn').onclick=()=>{ const html=$('#printReportArea')?.innerHTML||''; if(!html.trim()) return toast('Run report first.', true); printReportHtml(html); };
+    $('#exportReport').onclick=()=>downloadApi(`/api/export?${reportQuery()}`,`swifttill-${reportType}-report-${Date.now()}.csv`).catch(e=>toast(e.message,true));
+  }catch(e){ ws.innerHTML=`<div class="card subcard error-state"><h3>Reports failed to render</h3><p>${esc(e.message)}</p><button class="primary-btn" onclick="renderAdminContent()">Reload Reports</button></div>`; }
+}
+async function runReport(){
+  const target=$('#reportResult');
+  if(target) target.innerHTML='<div class="report-loading"><b>Generating report...</b><span>Reading paid bills, payments, items and shift totals from Neon.</span></div>';
+  $('#exportReport')?.setAttribute('disabled','disabled'); $('#printReportBtn')?.setAttribute('disabled','disabled');
+  try{
+    const j=await api(`/api/reports?${reportQuery()}`,null,'GET'); const r=j.data;
+    if(!$('#reportResult')) return;
+    $('#reportResult').innerHTML=`<div id="printReportArea" class="report-print-wrap">${reportHeaderHtml(r)}${reportBodyHtml(r)}<div class="sep"></div><div class="report-signature"><span>Prepared By</span><span>Checked By</span><span>Manager Signature</span></div><div class="c">${esc(state.settings.reportFooter||'Generated by SwiftTill POS')}</div></div></div>`;
+    $('#exportReport')?.removeAttribute('disabled'); $('#printReportBtn')?.removeAttribute('disabled');
+  }catch(e){ if(target) target.innerHTML=`<div class="empty-cart error-state"><b>Report failed</b><p>${esc(e.message)}</p></div>`; toast(e.message,true); }
+}

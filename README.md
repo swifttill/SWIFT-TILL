@@ -38,3 +38,7 @@ Client gets only the print-agent ZIP. Do not share Render, Neon, Cloudflare, or 
 ## Phase 22 — Structured Reports
 
 Reports now use main report menus with dedicated report types: Daily, Item Wise, Category Wise, Payment Mode, Custom, X, Y, Z, Discount, Void/Refund and Order Type. Each report shows only relevant filters, exports a report-specific Excel-compatible CSV, and prints in a consistent bill-style report format.
+
+## Phase 23 — Professional POS Reports Rebuild
+
+Adds closeout-grade reports with summary cards, totals footers, payment reconciliation, item/category/order-type analysis, X/Y/Z style layouts, receipt-like print, and per-report export columns.
