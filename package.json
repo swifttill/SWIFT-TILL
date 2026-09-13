@@ -1,8 +1,8 @@
 {
   "name": "swifttill-pos-monorepo",
-  "version": "28.0.0",
+  "version": "29.0.0",
   "private": true,
-  "description": "SwiftTill POS V28: compact cart density, client admin backup cleanup, single-screen modern POS compression and professional spacing audit.",
+  "description": "SwiftTill POS V29: extreme right-cart compression, maximum bill item visibility, compact totals/actions and modern rush-hour POS density.",
   "workspaces": [
     "apps/api",
     "apps/web",

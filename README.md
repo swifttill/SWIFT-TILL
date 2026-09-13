@@ -86,7 +86,7 @@ Key changes:
 - Same-screen POS workflow remains: order, table/menu/deal selection, cart, hold/pay/print actions.
 - Admin panel gets a more professional back-office shell without exposing cloud credentials.
 
-Version: 28.0.0-modern-pos-ui-system
+Version: 29.0.0-extreme-cart-compression
 
 
 ## Phase 28 — Cart Density + Client Admin Cleanup
@@ -101,3 +101,19 @@ This phase compresses the right bill/cart panel for rush-hour billing and remove
 - Client admin no longer shows create/download/restore backup controls. Automatic backup/history behavior remains internal.
 - Admin sidebar no longer exposes Backup / History as a routine staff screen.
 - Version status flags added for V28.
+
+
+## Phase 29 — Extreme Cart Compression
+
+This phase tightens the right bill/cart panel again after real screenshot feedback.
+
+- Order details grid is smaller and more horizontal.
+- Bill item list gets more visible height.
+- Item rows, thumbnails and quantity controls are denser.
+- Totals and discount section are smaller but still readable.
+- Print / Move / Split buttons are slimmer.
+- Hold / Pay buttons are compact but still strong.
+- Print-after-payment label is shortened to save space.
+- No UI section is hidden incorrectly; only spacing is compressed.
+
+Version: 29.0.0-extreme-cart-compression

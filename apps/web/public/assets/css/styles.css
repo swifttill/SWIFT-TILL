@@ -687,3 +687,54 @@ body{
 @media (max-width:1180px){
   .cart-density-list{min-height:240px!important;}
 }
+
+
+/* ============================================================
+   SwiftTill V29 Extreme Cart Compression
+   - maximum visible bill-item area without breaking readability
+   - tighter order meta, totals and action rows for rush-hour POS
+============================================================ */
+:root{--bill-w:clamp(292px,21vw,340px);}
+.right-rail{gap:7px!important;min-height:0!important;}
+.rail-nav{padding:6px!important;gap:6px!important;}
+.rail-nav button{min-height:34px!important;border-radius:11px!important;font-size:11px!important;padding:6px 8px!important;}
+.bill{padding:6px 8px!important;gap:3px!important;overflow:hidden!important;}
+.compact-bill-head{min-height:22px!important;padding-bottom:2px!important;margin:0!important;border-bottom:1px solid #edf3fb!important;}
+.compact-bill-head h2{font-size:13px!important;line-height:1!important;}
+.compact-bill-head b{font-size:10.5px!important;line-height:1!important;color:#5d6d86!important;}
+.compact-orderbox{margin:3px 0 2px!important;padding:4px!important;border-radius:11px!important;}
+.order-meta-grid{display:grid!important;grid-template-columns:repeat(4,minmax(0,1fr))!important;gap:3px!important;}
+.order-meta-cell{min-height:33px!important;border-radius:8px!important;padding:3px 4px!important;gap:0!important;align-content:center!important;}
+.order-meta-cell span{font-size:7.4px!important;letter-spacing:.01em!important;line-height:1!important;}
+.order-meta-cell b{font-size:10.5px!important;line-height:1.05!important;}
+.cart-density-list{flex:1 1 0!important;min-height:255px!important;margin-top:2px!important;padding:4px 5px!important;border-radius:11px!important;overflow:auto!important;background:#fbfdff!important;}
+.cart-empty-compact{min-height:125px!important;padding:8px!important;font-size:11px!important;}
+.cart-line{grid-template-columns:34px minmax(0,1fr) 72px!important;gap:5px!important;padding:5px 0!important;align-items:center!important;}
+.cart-line img{width:34px!important;height:34px!important;border-radius:8px!important;object-fit:contain!important;}
+.cart-line h4{font-size:11px!important;line-height:1.05!important;margin:0 0 1px!important;}
+.cart-line p{font-size:9.5px!important;line-height:1.05!important;margin:1px 0!important;}
+.line-tools{display:flex!important;align-items:center!important;gap:4px!important;justify-content:flex-end!important;}
+.line-tools button{font-size:9px!important;line-height:1!important;}
+.qty{height:22px!important;border-radius:8px!important;overflow:hidden!important;}
+.qty button{width:21px!important;min-height:22px!important;font-size:10px!important;padding:0!important;}
+.qty input{width:28px!important;height:22px!important;font-size:10px!important;padding:0!important;}
+.trash{font-size:10px!important;padding:0 1px!important;}
+.v28-totals{gap:2px!important;padding-top:4px!important;margin-top:2px!important;}
+.compact-row{font-size:11px!important;line-height:1!important;min-height:16px!important;}
+.compact-row b{font-size:11px!important;}
+.compact-discount{grid-template-columns:1fr 58px 52px!important;gap:4px!important;font-size:10px!important;align-items:center!important;min-height:24px!important;}
+.compact-discount .switch{height:24px!important;border-radius:8px!important;overflow:hidden!important;}
+.compact-discount .switch button{min-height:24px!important;padding:3px 6px!important;font-size:10px!important;}
+.compact-discount .small-input{min-height:24px!important;height:24px!important;padding:3px 6px!important;font-size:10px!important;border-radius:8px!important;}
+.compact-total{font-size:15px!important;line-height:1.05!important;padding:3px 0!important;margin-top:1px!important;}
+.compact-total b{font-size:18px!important;line-height:1!important;}
+.one-line-actions{gap:4px!important;margin:3px 0 2px!important;}
+.one-line-actions .mini-action{min-height:25px!important;padding:3px 4px!important;border-radius:8px!important;font-size:9.5px!important;gap:2px!important;}
+.compact-check{font-size:9.8px!important;margin:1px 0!important;gap:4px!important;line-height:1!important;min-height:17px!important;}
+.compact-check input{width:13px!important;height:13px!important;}
+.compact-main-actions{gap:6px!important;margin-top:2px!important;}
+.compact-main-actions .hold,.compact-main-actions .pay{min-height:36px!important;border-radius:11px!important;font-size:11.5px!important;padding:6px 7px!important;}
+@media (min-height:820px){.cart-density-list{min-height:315px!important;}}
+@media (max-height:760px){.cart-density-list{min-height:230px!important}.compact-orderbox{padding:3px!important}.order-meta-cell{min-height:30px!important}.compact-main-actions .hold,.compact-main-actions .pay{min-height:34px!important}.one-line-actions .mini-action{min-height:24px!important}}
+@media (max-height:690px){.cart-density-list{min-height:200px!important}.compact-check{display:none!important}.order-meta-grid{grid-template-columns:repeat(4,minmax(0,1fr))!important}.cart-line{padding:4px 0!important}.compact-total b{font-size:16px!important}}
+@media (max-width:1180px){.cart-density-list{min-height:275px!important}.order-meta-grid{grid-template-columns:repeat(4,minmax(0,1fr))!important;}}
