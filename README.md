@@ -251,3 +251,14 @@ The favicon still uses the original SwiftTill logo mark. It is now cropped tight
 Mobile cashier flow fixed: adding menu items or deals no longer opens the bill drawer automatically. The bill/cart drawer is manual-only through the mobile Bill/Open Bill/Pay controls so staff can add multiple items quickly without closing the drawer after every tap.
 
 Status flags: `mobileAddItemsStayOnMenu=true`, `mobileBillDrawerManualOnly=true`.
+
+
+## Phase 40 — Printer Module 99% Final
+
+Printer module hardened with cloud queue polling, Windows default printer diagnostics, local spool recovery, retry support, and final client PC print-agent ZIP.
+
+Client download after pushing to GitHub:
+
+```text
+https://github.com/swifttill/SWIFT-TILL/raw/main/downloads/SwiftTill_Print_Agent_Client_Package_Final.zip
+```

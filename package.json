@@ -1,8 +1,8 @@
 {
   "name": "swifttill-pos-monorepo",
-  "version": "39.0.0",
+  "version": "40.0.0",
   "private": true,
-  "description": "SwiftTill POS V39: discount/cash calculation guards and button text visibility fixes.",
+  "description": "SwiftTill POS V40: printer module 99% hardening and final client print-agent package.",
   "workspaces": [
     "apps/api",
     "apps/web",

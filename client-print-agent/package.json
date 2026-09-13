@@ -1,8 +1,8 @@
 {
-  "name": "swifttill-print-agent-client",
-  "version": "24.0.0",
+  "name": "swifttill-print-agent-client-final",
+  "version": "40.0.0",
   "private": true,
-  "description": "SwiftTill POS client print agent: cloud print queue to Windows default thermal printer.",
+  "description": "SwiftTill POS final client print agent for restaurant counter PC.",
   "scripts": {
     "start": "node apps/print-agent/agent.js"
   },
