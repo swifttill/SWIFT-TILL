@@ -1,19 +1,22 @@
 {
   "name": "swifttill-pos-monorepo",
-  "version": "7.0.0",
+  "version": "8.0.0",
   "private": true,
-  "description": "SwiftTill POS V7 online-cloud focused monorepo with table-required dine-in flow, live table timers, full-card menu/deal adding, payment calculators, reports fixes, clean customer admin, receipt/report formats, print agent and deployment-ready structure.",
+  "description": "SwiftTill POS V8 production foundation: online cloud POS, backend API, admin panel, Neon PostgreSQL schema, Cloudflare R2 storage layer, reports, receipt formats, roles and local print agent.",
   "workspaces": [
     "apps/api",
     "apps/web",
+    "apps/print-agent",
     "packages/*"
   ],
   "scripts": {
     "start": "node apps/api/server.js",
     "dev": "node apps/api/server.js",
-    "check": "node --check apps/api/server.js",
+    "check": "node --check apps/api/server.js && node --check packages/db/src/client.js && node --check packages/storage/src/r2.js && node --check apps/print-agent/agent.js",
     "check:web": "node -e \"new Function(require('fs').readFileSync('apps/web/public/assets/js/app.js','utf8')); console.log('web js ok')\"",
-    "seed:reset": "node scripts/reset-local-db.js"
+    "seed:reset": "node scripts/reset-local-db.js",
+    "db:schema": "echo Prisma schema is in packages/db/prisma/schema.prisma",
+    "validate": "npm run check && npm run check:web"
   },
   "engines": {
     "node": ">=18.0.0"
