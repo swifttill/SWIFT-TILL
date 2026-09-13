@@ -1,0 +1,6 @@
+{
+  "name": "@swifttill/db",
+  "version": "8.0.0",
+  "private": true,
+  "main": "src/client.js"
+}

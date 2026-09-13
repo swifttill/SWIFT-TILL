@@ -1,15 +1,33 @@
-# SwiftTill POS Monorepo V7
+# SwiftTill POS Monorepo V8
 
-Clean online-focused SwiftTill POS with backend API, responsive POS UI, separate Admin Panel, roles/permissions, reports, receipt/report formats, payment calculators, live table timers, and local print-agent path for thermal printers.
+SwiftTill POS V8 is the production-foundation package for the real cloud project. It preserves the approved V7 POS/admin UI while adding the structure needed for Neon PostgreSQL, Cloudflare R2, GitHub workflow, Render/Vercel deployment and local thermal print-agent integration.
+
+## Current status
+
+```text
+V7 UI/runtime: preserved
+V8 production foundation: added
+Local test mode: working through JSON runtime
+Production database schema: added
+R2 storage boundary: added
+GitHub workflow: added
+Offline mode: disabled direction
+Print: cloud POS + local print agent
+```
 
 ## Run locally
 
 ```powershell
-cd "E:\pos\SwiftTill_POS_Monorepo_V7"
+cd "E:\swift-till\SWIFT-TILL"
+npm install
 npm start
 ```
 
-Open: http://localhost:5174
+Open:
+
+```text
+http://localhost:5174
+```
 
 ## App-window mode
 
@@ -19,21 +37,13 @@ Open: http://localhost:5174
 
 This opens SwiftTill like a desktop app window instead of a normal browser tab.
 
-## Cloud app-window mode
-
-After deployment, edit `START_SWIFTTILL_CLOUD_WINDOW.bat` and set your cloud URL.
-
-```powershell
-.\START_SWIFTTILL_CLOUD_WINDOW.bat
-```
-
 ## Local print agent
 
 ```powershell
 .\START_SWIFTTILL_PRINT_AGENT.bat
 ```
 
-Use this once on the client PC for thermal printer access. Cloud POS sends receipt data to the local print agent.
+The cloud POS can send receipt payloads to this local agent for thermal printing.
 
 ## Login
 
@@ -43,26 +53,41 @@ manager@swifttill.local / manager123
 cashier@swifttill.local / cashier123
 ```
 
-Manager PIN: `1234`
+Manager PIN:
 
-## V7 fixes
+```text
+1234
+```
 
-- Dine In order cannot be created without table selection.
-- New Order table dropdown shows available tables only.
-- Busy table cannot be assigned again until paid/void/released.
-- Busy table timer now shows live `HH:MM:SS` and updates every second.
-- Moving a table preserves original occupied time; timer does not restart.
-- Menu item and deal cards are fully clickable; plus button removed.
-- Deal amount visibility fixed on compact cards.
-- Payment modal now has a calculator for Cash, Card, Online, and Split Payment.
-- Cash overpayment shows Change and is not counted as revenue.
-- Card/Online extra amount is detected and blocked; exact amount required.
-- Reports API/UI verified and expanded with shift cash separation.
-- Opening Cash is shown separately in reports and is not counted as sale.
-- Admin panel no longer shows customer-irrelevant Cloud/R2/Backup configuration tabs.
-- Offline cache/service worker disabled; old local cache is unregistered automatically.
-- Production direction is online cloud app + one-time local print agent.
+## Added in V8
+
+```text
+.gitignore
+.env.example production variables
+packages/db/prisma/schema.prisma
+packages/db/src/client.js
+packages/storage/src/r2.js
+.github/workflows/validate.yml
+docs/PHASE_8_PRODUCTION_FOUNDATION.md
+docs/DEPLOYMENT_CHECKLIST.md
+docs/PRINT_AGENT_SPEC.md
+```
+
+## Production infrastructure decision
+
+```text
+Source code: GitHub
+Database: Neon PostgreSQL
+Images/media: Cloudflare R2
+Hosting: Render first, Vercel optional later
+Thermal printing: local Windows print agent
+POS mode: online cloud app
+```
+
+## Next phase
+
+Phase 9 should replace the local JSON API persistence with a real Neon/PostgreSQL implementation using the V8 Prisma schema and DB adapter boundary.
 
 ## Clean package policy
 
-No `node_modules`, no build cache, no test database.
+No `node_modules`, no build cache, no test database, no `.env` secrets.

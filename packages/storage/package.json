@@ -1,0 +1,6 @@
+{
+  "name": "@swifttill/storage",
+  "version": "8.0.0",
+  "private": true,
+  "main": "src/r2.js"
+}
