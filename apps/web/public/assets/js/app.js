@@ -25,7 +25,7 @@ function ensurePrintArea(){
   document.body.appendChild(el);
   return el;
 }
-function ensureBusyLayer(){ let el = document.getElementById('globalBusy'); if(!el){ el = document.createElement('div'); el.id='globalBusy'; el.innerHTML='<div class="busy-card"><div class="busy-bar"><span></span></div><b>Saving...</b><p>Real cloud save in progress.</p></div>'; document.body.appendChild(el); } return el; }
+function ensureBusyLayer(){ let el = document.getElementById('globalBusy'); if(!el){ el = document.createElement('div'); el.id='globalBusy'; el.innerHTML='<div class="busy-card"><div class="busy-bar"><span></span></div><b>Working...</b><p>Action sent. You can continue when button responds.</p></div>'; document.body.appendChild(el); } return el; }
 function setBusy(on){ busyCount = Math.max(0, busyCount + (on ? 1 : -1)); const el = ensureBusyLayer(); el.classList.toggle('show', busyCount > 0); document.body.classList.toggle('is-busy', busyCount > 0); }
 function beginAction(key){ if(pendingActions.has(key)) return false; pendingActions.add(key); return true; }
 function endAction(key){ pendingActions.delete(key); }
@@ -345,7 +345,7 @@ async function printReceipt(r){
   if(agentUrl){
     try{
       const res=await fetch(agentUrl,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({type:r.unpaid?'unpaid-bill':'receipt',receipt:r,html,text:receiptText(r)})});
-      if(res.ok){ toast('Receipt sent to local printer agent'); return; }
+      if(res.ok){ toast('Sent direct to local thermal printer agent'); return; }
     }catch(e){}
   }
   setTimeout(()=>window.print(),100);
@@ -366,39 +366,43 @@ function receiptHTML(r){
 }
 function openOpenShift(){ openModal(`<div class="modal-head"><h2>Open Shift</h2><button class="x" onclick="closeModal()">×</button></div><div class="field"><label>Opening Cash</label><input id="openingCash" type="number" value="5000"></div><button class="primary-btn" style="width:100%" id="doOpenShift">Start Shift</button>`); $('#doOpenShift').onclick=async()=>{try{await api('/api/shift/open',{openingCash:Number($('#openingCash').value||0)});closeModal();await loadState();renderShell();toast('Shift opened');}catch(e){toast(e.message,true);}}; }
 function openCloseShift(){ openModal(`<div class="modal-head"><h2>Close Shift</h2><button class="x" onclick="closeModal()">×</button></div><p class="muted-note">Count physical cash and close the active shift.</p><div class="field"><label>Counted Cash</label><input id="countedCash" type="number" value="0"></div><button class="primary-btn" style="width:100%" id="doCloseShift">Close Shift</button>`); $('#doCloseShift').onclick=async()=>{try{const j=await api('/api/shift/close',{countedCash:Number($('#countedCash').value||0)});closeModal();await loadState();renderShell();toast(`Shift closed. Difference ${money(j.shift.difference)}`);}catch(e){toast(e.message,true);}}; }
+function safeArr(v){ return Array.isArray(v) ? v : []; }
 function renderReports(ws){
-  const today = new Date().toISOString().slice(0,10);
-  const userOptions = state.users.map(u=>`<option value="${esc(u.id)}">${esc(u.name)}</option>`).join('');
-  const takerOptions = state.orderTakers.map(t=>`<option value="${esc(t.id)}">${esc(t.name)}</option>`).join('');
-  const itemOptions = state.items.map(i=>`<option value="${esc(i.id)}">${esc(i.name)}</option>`).join('') + state.deals.map(d=>`<option value="${esc(d.id)}">${esc(d.name)} (Deal)</option>`).join('');
-  const catOptions = state.categories.filter(c=>c.id!=='cat_all' && c.id!=='all').map(c=>`<option value="${esc(c.id)}">${esc(c.name)}</option>`).join('');
-  const shiftOptions = state.shifts.map(s=>`<option value="${esc(s.id)}">Shift #${s.number} - ${esc(s.cashierName)} - ${new Date(s.openedAt).toLocaleString()}</option>`).join('');
-  const paymentOptions = (state.paymentMethods||[]).filter(p=>p.active).map(p=>`<option value="${esc(p.name)}">${esc(p.name)}</option>`).join('');
-  ws.innerHTML=`<div class="center-scroll"><div class="report-page card subcard">
-    <div class="module-title"><div><h3>${esc(state.settings.reportTitle||'Sales Reports')}</h3><p class="muted-note">Filter by date, payment mode, item, category, discount, cashier, order taker and shift.</p></div><div class="actions-mini"><button class="ghost-btn" id="exportReport">Export CSV / Excel</button><button class="ghost-btn" id="printReportBtn">Print Report</button></div></div>
-    <div class="report-tabs"><button class="active" data-report-tab="sales">Sales</button><button data-report-tab="payment">Payment Mode</button><button data-report-tab="items">Item Wise</button><button data-report-tab="categories">Category Wise</button><button data-report-tab="discounts">Discounts</button><button data-report-tab="voids">Void / Refund</button><button data-report-tab="xz">X / Z</button></div>
-    <div class="report-filter-grid">
-      <div class="field"><label>From</label><input type="date" id="fromDate" value="${today}"></div>
-      <div class="field"><label>To</label><input type="date" id="toDate" value="${today}"></div>
-      <div class="field"><label>Payment Mode</label><select id="paymentMode"><option value="">All</option>${paymentOptions}</select></div>
-      <div class="field"><label>Order Type</label><select id="orderType"><option value="">All</option><option value="DINE_IN">Dine In</option><option value="DELIVERY">Delivery</option><option value="TAKEAWAY">Takeaway</option></select></div>
-      <div class="field"><label>Item / Deal</label><select id="itemId"><option value="">All</option>${itemOptions}</select></div>
-      <div class="field"><label>Category</label><select id="categoryFilter"><option value="">All</option>${catOptions}</select></div>
-      <div class="field"><label>Cashier</label><select id="cashierId"><option value="">All</option>${userOptions}</select></div>
-      <div class="field"><label>Order Taker</label><select id="orderTakerId"><option value="">All</option>${takerOptions}</select></div>
-      <div class="field"><label>Shift</label><select id="shiftId"><option value="">All</option>${shiftOptions}</select></div>
-      <label class="check"><input type="checkbox" id="discountOnly"> Discounted only</label>
-      <label class="check"><input type="checkbox" id="refundOnly"> Refunded only</label>
-    </div>
-    <button class="primary-btn" id="runReport">Run Report</button><button class="ghost-btn" id="lastMonthReport" type="button">Last 30 Days</button>
-    <div id="reportResult" class="mt"></div>
-  </div></div>`;
-  $('#runReport').onclick=loadReport;
-  $('#lastMonthReport').onclick=()=>{ const d=new Date(); const to=d.toISOString().slice(0,10); d.setDate(d.getDate()-30); $('#fromDate').value=d.toISOString().slice(0,10); $('#toDate').value=to; loadReport(); };
-  $('#exportReport').onclick=()=>downloadApi(`/api/export?${reportQuery()}`,`swifttill-report-${Date.now()}.csv`).catch(e=>toast(e.message,true));
-  $('#printReportBtn').onclick=()=>printReportArea();
-  $$('.report-tabs button').forEach(b=>b.onclick=()=>{$$('.report-tabs button').forEach(x=>x.classList.remove('active'));b.classList.add('active');const el=$(`#report-section-${b.dataset.reportTab}`); if(el) el.scrollIntoView({behavior:'smooth',block:'start'});});
-  loadReport();
+  try{
+    const today = new Date().toISOString().slice(0,10);
+    const users = safeArr(state.users), takers = safeArr(state.orderTakers), items = safeArr(state.items), deals = safeArr(state.deals), cats = safeArr(state.categories), shifts = safeArr(state.shifts), pays = safeArr(state.paymentMethods);
+    const userOptions = users.map(u=>`<option value="${esc(u.id)}">${esc(u.name)}</option>`).join('');
+    const takerOptions = takers.map(t=>`<option value="${esc(t.id)}">${esc(t.name)}</option>`).join('');
+    const itemOptions = items.map(i=>`<option value="${esc(i.id)}">${esc(i.name)}</option>`).join('') + deals.map(d=>`<option value="${esc(d.id)}">${esc(d.name)} (Deal)</option>`).join('');
+    const catOptions = cats.filter(c=>c.id!=='cat_all' && c.id!=='all').map(c=>`<option value="${esc(c.id)}">${esc(c.name)}</option>`).join('');
+    const shiftOptions = shifts.map(s=>`<option value="${esc(s.id)}">Shift #${s.number} - ${esc(s.cashierName||'')} - ${s.openedAt?new Date(s.openedAt).toLocaleString():''}</option>`).join('');
+    const paymentOptions = pays.filter(p=>p.active!==false).map(p=>`<option value="${esc(p.name)}">${esc(p.name)}</option>`).join('');
+    ws.innerHTML=`<div class="report-page card subcard admin-report-page">
+      <div class="module-title"><div><h3>${esc(state.settings?.reportTitle||'Sales Reports')}</h3><p class="muted-note">Real reports from paid bills saved in Neon. Use Last 30 Days for monthly history.</p></div><div class="actions-mini"><button class="ghost-btn" id="exportReport">Export CSV / Excel</button><button class="ghost-btn" id="printReportBtn">Print Report</button></div></div>
+      <div class="report-tabs"><button class="active" data-report-tab="sales">Sales</button><button data-report-tab="payment">Payment Mode</button><button data-report-tab="items">Item Wise</button><button data-report-tab="categories">Category Wise</button><button data-report-tab="discounts">Discounts</button><button data-report-tab="voids">Void / Refund</button><button data-report-tab="xz">X / Z</button></div>
+      <div class="report-filter-grid">
+        <div class="field"><label>From</label><input type="date" id="fromDate" value="${today}"></div>
+        <div class="field"><label>To</label><input type="date" id="toDate" value="${today}"></div>
+        <div class="field"><label>Payment Mode</label><select id="paymentMode"><option value="">All</option>${paymentOptions}</select></div>
+        <div class="field"><label>Order Type</label><select id="orderType"><option value="">All</option><option value="DINE_IN">Dine In</option><option value="DELIVERY">Delivery</option><option value="TAKEAWAY">Takeaway</option></select></div>
+        <div class="field"><label>Item / Deal</label><select id="itemId"><option value="">All</option>${itemOptions}</select></div>
+        <div class="field"><label>Category</label><select id="categoryFilter"><option value="">All</option>${catOptions}</select></div>
+        <div class="field"><label>Cashier</label><select id="cashierId"><option value="">All</option>${userOptions}</select></div>
+        <div class="field"><label>Order Taker</label><select id="orderTakerId"><option value="">All</option>${takerOptions}</select></div>
+        <div class="field"><label>Shift</label><select id="shiftId"><option value="">All</option>${shiftOptions}</select></div>
+        <label class="check"><input type="checkbox" id="discountOnly"> Discounted only</label>
+        <label class="check"><input type="checkbox" id="refundOnly"> Refunded only</label>
+      </div>
+      <div class="quick-fill-row"><button class="primary-btn" id="runReport">Run Report</button><button class="ghost-btn" id="lastMonthReport" type="button">Last 30 Days</button></div>
+      <div id="reportResult" class="mt"><div class="empty-cart compact-empty"><b>Report ready.</b><p>Click Run Report or wait for auto-load.</p></div></div>
+    </div>`;
+    $('#runReport').onclick=loadReport;
+    $('#lastMonthReport').onclick=()=>{ const d=new Date(); const to=d.toISOString().slice(0,10); d.setDate(d.getDate()-30); $('#fromDate').value=d.toISOString().slice(0,10); $('#toDate').value=to; loadReport(); };
+    $('#exportReport').onclick=()=>downloadApi(`/api/export?${reportQuery()}`,`swifttill-report-${Date.now()}.csv`).catch(e=>toast(e.message,true));
+    $('#printReportBtn').onclick=()=>printReportArea();
+    $$('.report-tabs button').forEach(b=>b.onclick=()=>{$$('.report-tabs button').forEach(x=>x.classList.remove('active'));b.classList.add('active');const el=$(`#report-section-${b.dataset.reportTab}`); if(el) el.scrollIntoView({behavior:'smooth',block:'start'});});
+    setTimeout(loadReport, 20);
+  }catch(e){ ws.innerHTML=`<div class="card subcard error-state"><h3>Reports failed to render</h3><p>${esc(e.message)}</p><button class="primary-btn" onclick="renderAdminContent()">Reload Reports</button></div>`; }
 }
 function reportQuery(){
   const params = new URLSearchParams();
@@ -415,7 +419,7 @@ async function loadReport(){
     const j=await api(`/api/reports?${reportQuery()}`,null,'GET'); const r=j.data;
     if(!$('#reportResult')) return;
     $('#reportResult').innerHTML=`<div id="printReportArea" class="report-print-wrap">
-    <div class="report-brand"><div><h2>${esc(state.settings.businessName)}</h2><p>${esc(state.settings.address||'')} ${state.settings.phone?'• '+esc(state.settings.phone):''}</p></div><b>${esc(state.settings.reportTitle||'Sales Report')}</b></div>
+    <div class="report-brand"><div><h2>${esc(state.settings.businessName||'SwiftTill POS')}</h2><p>${esc(state.settings.address||'')} ${state.settings.phone?'• '+esc(state.settings.phone):''}</p></div><b>${esc(state.settings.reportTitle||'Sales Report')}</b></div>
     <div class="report-grid" id="report-section-sales">
       <div class="card metric"><p>Orders</p><h3>${r.summary.orders}</h3></div>
       <div class="card metric"><p>Gross Sales</p><h3>${money(r.summary.gross)}</h3></div>
@@ -438,12 +442,12 @@ async function loadReport(){
   }catch(e){ const target=$('#reportResult'); if(target) target.innerHTML=`<div class="empty-cart error-state"><b>Report failed</b><p>${esc(e.message)}</p></div>`; toast(e.message,true);}
 }
 function renderAdmin(ws){
-  const tabs=['dashboard','setup','reports','paid','categories','items','deals','tables','takers','payments','users','roles','settings','cloud','backup'];
+  const tabs=['dashboard','setup','reports','paid','categories','items','deals','tables','takers','payments','users','roles','settings','backup'];
   ws.innerHTML=`<div class="admin-layout"><div class="panel admin-nav">${tabs.map(t=>`<button class="${adminTab===t?'active':''}" data-admin-tab="${t}">${labelTab(t)}</button>`).join('')}</div><div class="panel admin-content" id="adminContent"></div></div>`;
   $$('[data-admin-tab]').forEach(b=>b.onclick=()=>{adminTab=b.dataset.adminTab;renderAdmin(ws);});
   renderAdminContent();
 }
-function labelTab(t){ return ({setup:'Restaurant Setup',takers:'Order Takers',roles:'Roles & Permissions',settings:'Company / Branding',payments:'Payment Methods',paid:'Paid Orders',backup:'Backup / History',cloud:'Cloud / R2'}[t] || t[0].toUpperCase()+t.slice(1)); }
+function labelTab(t){ return ({setup:'Restaurant Setup',takers:'Order Takers',roles:'Roles & Permissions',settings:'Company / Branding',payments:'Payment Methods',paid:'Paid Orders',backup:'Backup / History'}[t] || t[0].toUpperCase()+t.slice(1)); }
 function renderAdminContent(){
   const c=$('#adminContent');
   if(adminTab==='dashboard') return c.innerHTML=`<div class="admin-hero"><div class="admin-hero-title"><h3>Admin Dashboard</h3><p>Control menu, users, reports, company branding and receipt/printer settings.</p></div></div><div class="report-grid"><div class="card metric"><p>Categories</p><h3>${state.categories.length}</h3></div><div class="card metric"><p>Menu Items</p><h3>${state.items.length}</h3></div><div class="card metric"><p>Tables</p><h3>${state.tables.length}</h3></div><div class="card metric"><p>Open Orders</p><h3>${state.openOrders.length}</h3></div><div class="card metric"><p>Users</p><h3>${state.users.length}</h3></div><div class="card metric"><p>Roles</p><h3>${state.roles.length}</h3></div></div><div class="card subcard mt"><h3>Recent Audit</h3>${state.auditLogs.map(a=>`<p><b>${esc(a.action)}</b> — ${esc(a.userName)} — ${new Date(a.createdAt).toLocaleString()}</p>`).join('') || '<p>No audit yet.</p>'}</div>`;
@@ -459,7 +463,7 @@ function renderAdminContent(){
   if(adminTab==='users') return adminList(c,'users','user',['name','email','roleIds','active']);
   if(adminTab==='roles') return adminList(c,'roles','role',['name','description','permissions','active']);
   if(adminTab==='settings') return renderSettings(c);
-  if(adminTab==='cloud') return renderCloud(c);
+  if(adminTab==='cloud'){ adminTab='settings'; return renderSettings(c); }
   if(adminTab==='backup') return renderBackup(c);
 }
 function adminList(c,key,apiName,fields){ const rows=state[key]||[]; c.innerHTML=`<div class="admin-wrap"><div class="module-title"><h3>${labelTab(key)}</h3><button class="primary-btn" onclick="openAdminEditor('${apiName}')">Add New</button></div><table class="admin-table"><thead><tr><th>Image</th>${fields.map(f=>`<th>${esc(f)}</th>`).join('')}<th>Action</th></tr></thead><tbody>${rows.map(r=>`<tr><td>${r.imageUrl?`<img class="thumb" src="${esc(r.imageUrl)}">`:''}</td>${fields.map(f=>`<td>${esc(renderVal(r[f],f))}</td>`).join('')}<td><button class="ghost-btn" onclick='openAdminEditor("${apiName}",${JSON.stringify(r).replace(/'/g,"&#39;")})'>Edit</button><button class="danger-btn tiny" onclick='deleteAdminRecord("${apiName}","${esc(r.id)}")'>Delete</button></td></tr>`).join('')}</tbody></table></div>`; }
@@ -507,11 +511,7 @@ function renderSettings(c){
   $('#receiptPreviewBtn').onclick=()=>{ const latest=(state.paidOrders&&state.paidOrders[0]) || (currentOrder&&currentOrder.lines&&currentOrder.lines.length?currentOrder:null); if(!latest) return toast('No real order available for receipt preview. Create or open an order first.', true); ensurePrintArea().innerHTML=receiptHTML(receiptFromOrder(latest)); setTimeout(()=>window.print(),120); };
   $('#settingsForm').onsubmit=async e=>{e.preventDefault();const fd=new FormData(e.target);const data=Object.fromEntries(fd);['autoPrintReceipt','rememberPrintChoice','showLogoOnReceipt','showCustomerOnReceipt','showOrderTakerOnReceipt','showCashierOnReceipt','showPaymentBreakdown','reportShowBranding'].forEach(k=>data[k]=fd.has(k));['defaultDeliveryFee','receiptCopies'].forEach(k=>{data[k]=Number(data[k]||0)});try{ const file=fd.get('uploadFile'); if(file && file.size){ data.logoUrl = await uploadFile(file, 'logo'); } else if(data.imageUrl){ data.logoUrl = data.imageUrl; } delete data.uploadFile; delete data.imageUrl; await api('/api/admin/settings',data);await loadState();renderShell();toast('Settings saved');}catch(err){toast(err.message,true);}};
 }
-function renderCloud(c){
-  const s=state.settings;
-  c.innerHTML=`<div class="module-title"><div><h3>Cloud, R2 & App Window</h3><p class="muted-note">Production cloud mode. Render, Neon and Cloudflare R2 are active for real testing.</p></div></div><form id="cloudForm" class="grid2"><div class="card subcard"><h3>Cloud API</h3>${input('cloudApiUrl','Cloud API URL',s.cloudApiUrl||'')}${input('backupTarget','Backup Target',s.backupTarget||'local-download-first-r2-later')}<p class="muted-note">Use after local testing is approved.</p></div><div class="card subcard"><h3>Cloudflare R2</h3>${input('r2Mode','R2 Mode',s.r2Mode||'local-placeholder')}${input('r2BucketName','R2 Bucket Name',s.r2BucketName||'')}${input('r2PublicUrl','R2 Public URL',s.r2PublicUrl||'')}<p class="muted-note">Production uploads go directly to Cloudflare R2.</p></div><div class="card subcard"><h3>Print Agent</h3>${input('localAgentUrl','Local Agent URL',s.localAgentUrl||'http://127.0.0.1:9721/print')}${input('printMode','Print Mode',s.printMode||'browser-preview-now-local-agent-next')}${input('appWindowMode','App Window Mode',s.appWindowMode||'pwa-or-edge-app-window')}</div><div class="card subcard"><h3>Status</h3><p>GitHub: connected</p><p>Neon PostgreSQL: connected</p><p>Render: connected</p><p>Cloudflare R2: connected</p></div><button class="primary-btn">Save Cloud Settings</button></form>`;
-  $('#cloudForm').onsubmit=async e=>{e.preventDefault();const data=Object.fromEntries(new FormData(e.target));try{await api('/api/admin/settings',data);await loadState();renderShell();toast('Cloud settings saved');}catch(err){toast(err.message,true);}};
-}
+function renderCloud(c){ c.innerHTML=`<div class="card subcard"><h3>Cloud settings hidden</h3><p class="muted-note">Render, Neon and Cloudflare credentials are owner/developer settings and are not shown to restaurant staff.</p></div>`; }
 function renderBackup(c){ const b=state.backup||{}; c.innerHTML=`<div class="module-title"><div><h3>Backup, History & Retention</h3><p class="muted-note">Orders/reports history stays in Neon. Daily backup snapshots use Cloudflare R2 when configured.</p></div></div><div class="grid2"><div class="card subcard"><h3>Backup Status</h3><p>Mode: <b>${esc(b.mode||'cloud/database')}</b></p><p>Backups indexed: <b>${b.total||0}</b></p><p>Daily retention: <b>${b.dailyRetentionDays||30} days</b></p><p>Monthly retention: <b>${b.monthlyRetentionMonths||12} months</b></p><p>Latest: <b>${b.latest?new Date(b.latest.exportedAt).toLocaleString():'Not created yet'}</b></p><button class="ghost-btn" id="refreshBackupStatus">Refresh Status</button></div><div class="card subcard"><h3>Create Backup</h3><p class="muted-note">Creates a R2 JSON backup if R2 is configured and also indexes it in Neon state.</p><button class="primary-btn" id="createBackup">Create Cloud Backup</button><button class="ghost-btn mt" id="downloadBackup">Download Backup JSON</button></div><div class="card subcard"><h3>Restore Backup</h3><p class="muted-note">Use only with a SwiftTill backup JSON file. Paid order history is restored exactly from file.</p><input type="file" id="restoreFile" accept="application/json"><button class="danger-btn mt" id="restoreBtn">Restore</button></div><div class="card subcard"><h3>History Rule</h3><p>Deleting menu item/category/deal removes it from live menu only.</p><p>Old paid bills and reports keep line name, price and category snapshot.</p><p>Replacing/deleting media removes old R2 object when it is not reused.</p></div></div>`; $('#refreshBackupStatus').onclick=async()=>{try{const j=await api('/api/backup/status',null,'GET'); state.backup=j.backup; renderBackup(c);}catch(e){toast(e.message,true)}}; $('#createBackup').onclick=async()=>{try{const j=await api('/api/backup/create',{type:'manual'}); state.backup=j.summary; toast('Backup created'); renderBackup(c);}catch(e){toast(e.message,true)}}; $('#downloadBackup').onclick=()=>downloadApi('/api/backup/download',`swifttill-backup-${Date.now()}.json`).catch(e=>toast(e.message,true)); $('#restoreBtn').onclick=()=>{const file=$('#restoreFile').files[0];if(!file)return toast('Choose backup file',true);const r=new FileReader();r.onload=async()=>{try{await api('/api/backup/restore',JSON.parse(r.result));await loadState();renderShell();toast('Backup restored');}catch(e){toast(e.message,true)}};r.readAsText(file);}; }
 setInterval(refreshLiveTimers,1000);
 boot();

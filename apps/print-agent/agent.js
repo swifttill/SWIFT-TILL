@@ -6,7 +6,7 @@ const { execFile } = require('child_process');
 const PORT = Number(process.env.SWIFTTILL_PRINT_AGENT_PORT || 9721);
 const ROOT = path.resolve(__dirname, '../..');
 const SPOOL = path.join(ROOT, 'storage', 'print-spool');
-const MODE = process.env.SWIFTTILL_PRINTER_MODE || 'spool-only'; // spool-only | windows-print
+const MODE = process.env.SWIFTTILL_PRINTER_MODE || 'windows-print'; // spool-only | windows-print
 function ensureDir(p){ if(!fs.existsSync(p)) fs.mkdirSync(p,{recursive:true}); }
 function json(res, status, data){ res.writeHead(status, { 'Content-Type':'application/json; charset=utf-8', 'Access-Control-Allow-Origin':'*', 'Access-Control-Allow-Methods':'GET,POST,OPTIONS', 'Access-Control-Allow-Headers':'Content-Type,Authorization' }); res.end(JSON.stringify(data)); }
 function readBody(req){ return new Promise((resolve,reject)=>{ let body=''; req.on('data', c=>{ body+=c; if(body.length>2*1024*1024) reject(new Error('Payload too large')); }); req.on('end',()=>{ try{ resolve(body?JSON.parse(body):{}); }catch(e){ reject(new Error('Invalid JSON')); } }); }); }
@@ -16,7 +16,7 @@ function printWithWindowsDefault(file, cb){
 }
 async function handle(req,res){
   if(req.method==='OPTIONS') return json(res,204,{});
-  if(req.url==='/health') return json(res,200,{ ok:true, app:'SwiftTill Print Agent', version:'19.0.0', mode:MODE, port:PORT, spool:SPOOL });
+  if(req.url==='/health') return json(res,200,{ ok:true, app:'SwiftTill Print Agent', version:'20.0.0', mode:MODE, port:PORT, spool:SPOOL });
   if(req.url==='/test' && req.method==='POST'){ req.url='/print'; }
   if(req.url==='/print' && req.method==='POST'){
     try{

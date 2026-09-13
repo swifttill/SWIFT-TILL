@@ -1,43 +1,25 @@
-# SwiftTill POS Monorepo V19 — Final Hardening, Setup & Print Test
+# SwiftTill POS — V20 Admin Reports, Client-Safe Settings, Speed & Direct Print
 
-Production stack remains Render + Neon PostgreSQL + Cloudflare R2.
+Production hardening phase for real restaurant testing.
 
-## Phase 19 additions
+## Fixed in V20
 
-- Restaurant Setup tab in Admin
-- Setup checklist for business profile, categories, priced menu items, tables, order takers and password change
-- Change Password endpoint and UI
-- Default production passwords blocked when changing password
-- Print Agent test button from Admin setup/settings
-- Browser fallback print if local print agent is not running
-- `/api/print-agent/sample` admin printer test payload
-- `/api/order-engine/status` reports setup and print-agent readiness
-- V18 backup/history/media cleanup preserved
-- No demo restaurant/menu/tables/deals/images reintroduced
+- Admin Reports blank screen fixed with robust report renderer and fallback error state.
+- Cloud/R2 credentials tab hidden from restaurant client UI.
+- Restaurant staff only see business setup, menu, tables, users, reports, backup and printer tools.
+- Busy/loading behavior changed to lightweight non-blocking indicator for faster rush-hour operation.
+- Direct thermal printing defaults to local Windows print-agent mode.
+- Browser print fallback remains if local agent is not running.
+- Static HTML/JS/CSS are served no-store to avoid old cached frontend after Render deploy.
+- `/api/order-engine/status` reports V20 readiness flags.
 
-## Copy to repository
+## Real production services
 
-```powershell
-Expand-Archive -Path "$env:USERPROFILE\Downloads\SwiftTill_POS_Monorepo_V19_Final_Hardening_Setup_Print.zip" `
-  -DestinationPath "E:\pos\SwiftTill_POS_Monorepo_V19" -Force
+- Render: web service
+- Neon: PostgreSQL cloud state
+- Cloudflare R2: media/backup storage
+- Client PC: local print agent for thermal printing
 
-robocopy "E:\pos\SwiftTill_POS_Monorepo_V19" "E:\swift-till\SWIFT-TILL" /E /XD .git node_modules /XF .env *.log
+## Client warning
 
-cd "E:\swift-till\SWIFT-TILL"
-npm install
-npm run db:generate
-git status
-git add .
-git commit -m "Phase 19 final hardening setup and print test"
-git push origin main
-```
-
-## Live checks
-
-```text
-https://swift-till.onrender.com/api/health
-https://swift-till.onrender.com/api/env-check
-https://swift-till.onrender.com/api/order-engine/status
-```
-
-Expected version: `19.0.0-final-hardening-setup-print`.
+Render/Neon/R2 keys are never shown in Admin UI. They must stay only in Render environment variables.

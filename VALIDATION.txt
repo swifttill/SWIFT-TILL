@@ -1,5 +1,9 @@
-API syntax PASS
-Web JS syntax PASS
-Print agent syntax PASS
-Auth smoke test PASS
-ZIP integrity PASS
+SwiftTill POS V20 validation
+API syntax: PASS
+Web JS syntax: PASS
+Print agent syntax: PASS
+R2/storage syntax: PASS
+Admin cloud credentials hidden: PASS
+Reports render fallback: PASS
+Direct print-agent default: PASS
+ZIP integrity: PASS

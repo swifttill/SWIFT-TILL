@@ -1,8 +1,8 @@
 {
   "name": "swifttill-pos-monorepo",
-  "version": "19.0.0",
+  "version": "20.0.0",
   "private": true,
-  "description": "SwiftTill POS V19 final hardening: restaurant setup checklist, password change and print-agent test.",
+  "description": "SwiftTill POS V20: admin reports visible, client cloud credentials hidden, fast soft busy UI and direct local thermal print agent default.",
   "workspaces": [
     "apps/api",
     "apps/web",
