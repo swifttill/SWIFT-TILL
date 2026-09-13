@@ -1,8 +1,8 @@
 {
   "name": "swifttill-pos-monorepo",
-  "version": "37.0.0",
+  "version": "38.0.0",
   "private": true,
-  "description": "SwiftTill POS V36: original logo favicon enlarged/max-fill visibility fix.",
+  "description": "SwiftTill POS V38: live cross-device sync for mobile and PC order state.",
   "workspaces": [
     "apps/api",
     "apps/web",

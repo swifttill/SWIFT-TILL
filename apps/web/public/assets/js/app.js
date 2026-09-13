@@ -1335,4 +1335,161 @@ addDeal = async function(dealId){
 };
 
 
+/* ============================================================
+   SwiftTill V38 Live Cross-Device Sync
+   - mobile/PC both refresh from Neon state automatically
+   - cart changes auto-save after short debounce
+   - paid/closed order on one device disappears from other device
+   - open bills/tables/pay state stay current without manual refresh
+============================================================ */
+let __syncTimer = null;
+let __syncInFlight = false;
+let __lastSyncRevision = 0;
+let __localDirtyOrder = false;
+let __cartSaveTimer = null;
+let __cartSaveInFlight = false;
+let __lastRemoteNoticeAt = 0;
+let __suspendSyncUntil = 0;
+
+async function apiQuiet(path, data=null, method='GET'){
+  const res = await fetch(path, { method, headers:{'Content-Type':'application/json', Authorization:`Bearer ${token}`}, body:data ? JSON.stringify(data) : undefined, cache:'no-store' });
+  const json = await res.json().catch(()=>({ok:false,error:'Invalid server response'}));
+  if(res.status===401){ localStorage.removeItem('swifttill_token'); token=''; stopLiveSync(); renderLogin(); throw new Error('Session expired. Login again.'); }
+  if(!res.ok || json.ok===false) throw new Error(json.error || 'Request failed');
+  return json;
+}
+const __v38BaseLoadState = loadState;
+loadState = async function(){
+  await __v38BaseLoadState();
+  if(state?.sync?.revision) __lastSyncRevision = Number(state.sync.revision || __lastSyncRevision || 0);
+};
+async function loadStateQuiet(){
+  const j = await apiQuiet('/api/state', null, 'GET');
+  state = j.data;
+  if(state?.sync?.revision) __lastSyncRevision = Number(state.sync.revision || __lastSyncRevision || 0);
+  return state;
+}
+function orderServerCopy(orderId){ return (state?.openOrders||[]).find(o=>o.id===orderId) || (state?.paidOrders||[]).find(o=>o.id===orderId) || null; }
+function showRemoteToast(msg){ const n=Date.now(); if(n-__lastRemoteNoticeAt>2500){ __lastRemoteNoticeAt=n; toast(msg); } }
+function reconcileRemoteState(sync){
+  const id = currentOrder?.id || '';
+  let rerender = false;
+  if(id){
+    const current = sync?.currentOrder || orderServerCopy(id);
+    const serverPaid = current?.status === 'PAID' || (state?.paidOrders||[]).some(o=>o.id===id);
+    const serverOpen = (state?.openOrders||[]).find(o=>o.id===id);
+    if(serverPaid){
+      currentOrder = null;
+      __localDirtyOrder = false;
+      closeModal();
+      setMobileBill(false);
+      showRemoteToast('This bill was paid/closed on another device.');
+      rerender = true;
+    } else if(serverOpen && !__localDirtyOrder){
+      currentOrder = clone(serverOpen);
+      rerender = true;
+    } else if(!serverOpen && !__localDirtyOrder && !hasOrderLines(currentOrder)){
+      currentOrder = null;
+      rerender = true;
+    }
+  }
+  if(screen==='pos'){
+    if(centerMode==='open' || centerMode==='tables' || rerender) renderShell();
+    else { renderBill(); const fab=$('#mobileCartFab b'); if(fab) fab.textContent=mobileCartSummary(); const pay=$('#mobilePayBill'); if(pay) pay.textContent=currentOrder && hasOrderLines(currentOrder) ? 'Pay Now' : 'Open Bill'; }
+  } else if(screen==='admin' && adminTab==='reports') {
+    renderAdminContent();
+  }
+}
+async function syncNow(reason='poll'){
+  if(!token || !state || __syncInFlight || Date.now()<__suspendSyncUntil) return;
+  __syncInFlight = true;
+  try{
+    const q = currentOrder?.id ? `?orderId=${encodeURIComponent(currentOrder.id)}` : '';
+    const j = await apiQuiet('/api/sync/status'+q, null, 'GET');
+    const rev = Number(j.sync?.revision || 0);
+    if(rev && rev !== __lastSyncRevision){
+      const remoteSync = j.sync;
+      await loadStateQuiet();
+      reconcileRemoteState(remoteSync);
+    }
+  }catch(e){
+    if(navigator.onLine) console.warn('SwiftTill sync check failed:', e.message);
+  }finally{ __syncInFlight = false; }
+}
+function startLiveSync(){
+  if(__syncTimer) return;
+  __syncTimer = setInterval(()=>syncNow('interval'), 1800);
+  window.addEventListener('focus', ()=>syncNow('focus'));
+  document.addEventListener('visibilitychange', ()=>{ if(!document.hidden) syncNow('visible'); });
+  window.addEventListener('online', ()=>syncNow('online'));
+}
+function stopLiveSync(){ if(__syncTimer){ clearInterval(__syncTimer); __syncTimer=null; } }
+function markCartDirty(){
+  if(!currentOrder?.id) return;
+  __localDirtyOrder = true;
+  clearTimeout(__cartSaveTimer);
+  __cartSaveTimer = setTimeout(autoSaveCurrentOrder, 550);
+}
+async function autoSaveCurrentOrder(){
+  if(!token || !currentOrder?.id || __cartSaveInFlight) return;
+  if(!hasOrderLines(currentOrder)) return;
+  __cartSaveInFlight = true;
+  __suspendSyncUntil = Date.now()+1200;
+  const payload = clone(currentOrder);
+  try{
+    const j = await apiQuiet('/api/orders/cart-sync', payload, 'POST');
+    if(currentOrder?.id === j.order?.id) currentOrder = j.order;
+    __localDirtyOrder = false;
+    if(j.sync?.revision) __lastSyncRevision = Number(j.sync.revision || __lastSyncRevision || 0);
+    await loadStateQuiet();
+    const fab=$('#mobileCartFab b'); if(fab) fab.textContent=mobileCartSummary();
+    const pay=$('#mobilePayBill'); if(pay) pay.textContent=currentOrder && hasOrderLines(currentOrder) ? 'Pay Now' : 'Open Bill';
+  }catch(e){
+    if(/already paid|Order already paid/i.test(e.message)){
+      __localDirtyOrder = false;
+      currentOrder = null;
+      closeModal();
+      await loadStateQuiet().catch(()=>null);
+      renderShell();
+      toast('Bill already paid on another device.', true);
+    } else {
+      console.warn('SwiftTill cart autosave failed:', e.message);
+    }
+  }finally{ __cartSaveInFlight = false; }
+}
+const __v38BaseAddItem = addItem;
+addItem = async function(itemId){ await __v38BaseAddItem(itemId); markCartDirty(); };
+const __v38BaseAddDeal = addDeal;
+addDeal = async function(dealId){ await __v38BaseAddDeal(dealId); markCartDirty(); };
+const __v38BaseChangeQty = changeQty;
+changeQty = function(lineId, delta){ __v38BaseChangeQty(lineId, delta); markCartDirty(); };
+const __v38BaseRenderBill = renderBill;
+renderBill = function(){
+  __v38BaseRenderBill();
+  $$('[data-line-remove]').forEach(b=>b.addEventListener('click',()=>setTimeout(markCartDirty,0)));
+  $$('[data-qty-input]').forEach(inp=>inp.addEventListener('change',()=>setTimeout(markCartDirty,0)));
+  $$('[data-disc]').forEach(b=>b.addEventListener('click',()=>setTimeout(markCartDirty,0)));
+  const disc=$('#discountVal'); if(disc) disc.addEventListener('change',()=>setTimeout(markCartDirty,0));
+};
+const __v38BaseOpenPayModal = openPayModal;
+openPayModal = async function(){
+  await syncNow('before-pay');
+  if(!currentOrder) return toast('This bill was closed on another device.', true);
+  return __v38BaseOpenPayModal();
+};
+const __v38BaseSaveOrder = saveOrder;
+saveOrder = async function(hold=false){
+  clearTimeout(__cartSaveTimer);
+  __localDirtyOrder = false;
+  const result = await __v38BaseSaveOrder(hold);
+  await syncNow('after-save');
+  return result;
+};
+const __v38BaseRenderShell = renderShell;
+renderShell = function(){
+  __v38BaseRenderShell();
+  startLiveSync();
+};
+
+
 boot();

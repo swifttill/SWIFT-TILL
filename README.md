@@ -1,3 +1,25 @@
+# SwiftTill POS V38 — Live Cross-Device Sync
+
+This phase improves real-time operational sync between mobile and PC counters. Paying, holding, saving, editing and opening bills on one device now refreshes the other device automatically.
+
+## V38 fixes
+
+- Added state revision tracking in cloud state.
+- Added `/api/sync/status` lightweight sync endpoint.
+- Added `/api/orders/cart-sync` autosave endpoint for active cart changes.
+- Mobile item/deal add stays on menu, but cart is autosaved to Neon.
+- PC and mobile refresh Open Bills, table status and paid status automatically.
+- If a bill is paid on mobile, PC closes/clears that active bill and removes it from Open Bills.
+- If PC changes/holds/pays a bill, mobile sees the same state without manual refresh.
+- Before Pay, device syncs with server to avoid paying an already-closed bill.
+- Desktop/mobile UI stays fast: sync is quiet and does not show the big loading overlay.
+
+## Current verdict
+
+Controlled restaurant pilot is stronger after V38 deploy. Multi-device order state now has active polling + autosave, but final handover still needs real printer and rush-hour order simulation.
+
+---
+
 # SwiftTill POS V33 — Final 360 Non-Testing Audit Fixes
 
 This package applies a deep non-UI operational audit pass after V30. It keeps the modern POS/admin/report/branding work and hardens the remaining backend, history, security, print, backup and workflow rules before live QA.

@@ -15,7 +15,7 @@ const STORAGE_DIR = path.join(ROOT, 'storage', 'uploads');
 const DB_PATH = path.join(DATA_DIR, 'db.json');
 const PORT = Number(process.env.PORT || 5174);
 const TOKENS = new Map();
-const APP_VERSION = '37.0.0-mobile-add-items-stay-on-menu';
+const APP_VERSION = '38.0.0-live-cross-device-sync';
 const CLOUD_STATE_KEY = process.env.SWIFTTILL_STATE_KEY || 'swift-till-main';
 let cloudStateCache = null;
 let cloudStateInitPromise = null;
@@ -289,9 +289,11 @@ async function ensureCloudState() {
     if (!db) {
       db = seedDb();
       migrateDb(db);
+      ensureStateRevision(db);
       await prisma.$executeRawUnsafe('INSERT INTO swifttill_app_state (key, value, updated_at) VALUES ($1, $2::jsonb, NOW()) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()', CLOUD_STATE_KEY, JSON.stringify(db));
     }
     migrateDb(db);
+    ensureStateRevision(db);
     await maybeDailyMediaCleanup(db);
     await prisma.$executeRawUnsafe('INSERT INTO swifttill_app_state (key, value, updated_at) VALUES ($1, $2::jsonb, NOW()) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()', CLOUD_STATE_KEY, JSON.stringify(db));
     cloudStateCache = db;
@@ -306,9 +308,11 @@ async function loadDb() {
   if (!fs.existsSync(DB_PATH)) saveDbSync(seedDb());
   const db = JSON.parse(fs.readFileSync(DB_PATH, 'utf8'));
   migrateDb(db);
+  ensureStateRevision(db);
   return db;
 }
-async function saveDb(db) {
+async function saveDb(db, reason = 'state-save') {
+  touchStateRevision(db, reason);
   if (shouldUseCloudState()) {
     cloudStateCache = db;
     try { await maybeCreateDailyBackup(db); } catch (e) { console.error('Auto backup check failed:', e.message); }
@@ -331,6 +335,82 @@ function assertOrderEngineState(db) {
   if (!Array.isArray(db.printJobs)) db.printJobs = [];
   if (!Array.isArray(db.deletedCatalog)) db.deletedCatalog = [];
   if (!db.counters) db.counters = { bill: 1000, z: 0 };
+}
+
+function ensureStateRevision(db) {
+  if (!db.meta) db.meta = { app: 'SwiftTill POS', version: APP_VERSION, createdAt: now() };
+  if (!Number.isFinite(Number(db.meta.stateRevision))) db.meta.stateRevision = 1;
+  if (!db.meta.stateUpdatedAt) db.meta.stateUpdatedAt = now();
+  if (!db.meta.lastSyncReason) db.meta.lastSyncReason = 'bootstrap';
+}
+function touchStateRevision(db, reason = 'state-save') {
+  ensureStateRevision(db);
+  db.meta.stateRevision = Number(db.meta.stateRevision || 0) + 1;
+  db.meta.stateUpdatedAt = now();
+  db.meta.lastSyncReason = reason;
+  db.meta.version = APP_VERSION;
+  return db.meta.stateRevision;
+}
+function syncSnapshot(db, orderId = '') {
+  ensureStateRevision(db);
+  const current = orderId ? (db.orders || []).find(o => o.id === orderId) : null;
+  const openOrders = (db.orders || []).filter(o => ['OPEN','HELD'].includes(o.status) && hasBillLines(o));
+  const paidOrders = (db.orders || []).filter(o => o.status === 'PAID');
+  return {
+    revision: db.meta.stateRevision,
+    updatedAt: db.meta.stateUpdatedAt,
+    reason: db.meta.lastSyncReason,
+    currentOrder: current ? {
+      id: current.id,
+      number: current.number || 'Draft',
+      status: current.status,
+      type: current.type,
+      total: totals(current).total,
+      lineCount: (current.lines || []).reduce((s,l)=>s+Number(l.qty||0),0),
+      updatedAt: current.updatedAt || current.paidAt || current.createdAt || ''
+    } : null,
+    counts: { openOrders: openOrders.length, paidOrders: paidOrders.length, printJobs: (db.printJobs || []).filter(j => ['PENDING','PRINTING'].includes(j.status)).length },
+    openOrderIds: openOrders.map(o => o.id),
+    paidOrderIds: paidOrders.slice(-50).map(o => o.id)
+  };
+}
+async function saveCartSync(res, db, user, body) {
+  const order = (db.orders || []).find(o => o.id === body.id);
+  if (!order) throw Object.assign(new Error('Order not found'), { status: 404 });
+  if (order.status === 'PAID') throw Object.assign(new Error('Order already paid on another device'), { status: 409 });
+  const nextType = body.type || order.type;
+  const nextTableId = body.tableId ?? order.tableId;
+  const nextLines = Array.isArray(body.lines) ? normalizeOrderLines(body.lines) : normalizeOrderLines(order.lines);
+  Object.assign(order, {
+    type: nextType,
+    tableId: nextType === 'DINE_IN' ? nextTableId : null,
+    guests: nextType === 'DINE_IN' ? Number((body.guests ?? order.guests) || 1) : 0,
+    orderTakerId: body.orderTakerId ?? order.orderTakerId,
+    orderTakerName: body.orderTakerName ?? order.orderTakerName,
+    customerName: body.customerName ?? order.customerName,
+    mobile: body.mobile ?? order.mobile,
+    address: body.address ?? order.address,
+    deliveryFee: nextType === 'DELIVERY' ? money(body.deliveryFee ?? order.deliveryFee) : 0,
+    lines: nextLines,
+    discountType: body.discountType || order.discountType || 'NONE',
+    discountValue: money(body.discountValue ?? order.discountValue),
+    updatedAt: now(),
+    lastSyncedBy: user.name
+  });
+  if (!hasBillLines(order)) {
+    order.status = 'DRAFT';
+    order.tableOccupiedAt = null;
+  } else {
+    if (order.type === 'DINE_IN' && !order.tableId) throw Object.assign(new Error('Dine In order requires table selection'), { status: 422 });
+    assertTableAvailableForActiveOrder(db, order, order.tableId, 'This table already has an active order. Open that order instead.');
+    ensureOrderNumber(db, order);
+    if (order.type === 'DINE_IN' && order.tableId && !order.tableOccupiedAt) order.tableOccupiedAt = order.createdAt || now();
+    order.status = body.hold ? 'HELD' : 'OPEN';
+  }
+  order.lastSyncAt = now();
+  order.lastSyncBy = user.name;
+  await saveDb(db, 'order-cart-sync');
+  return send(res, 200, { ok: true, order, totals: totals(order), sync: syncSnapshot(db, order.id) });
 }
 function normalizeLine(line) {
   const qty = Math.max(1, Number(line.qty || 1));
@@ -457,7 +537,7 @@ function assertTableAvailableForActiveOrder(db, order, tableId, message = 'This 
 }
 function tableMap(db) { const open = db.orders.filter(o => ['OPEN','HELD'].includes(o.status) && o.type === 'DINE_IN' && o.tableId && hasBillLines(o)); return db.tables.map(t => { const order = open.find(o => o.tableId === t.id); return { ...t, busy: !!order, orderId: order?.id || null, orderNumber: order?.number || null, occupiedAt: order?.tableOccupiedAt || order?.createdAt || null, guests: order?.guests || 0 }; }); }
 function publicUser(db, u) { const permissions = userPermissions(db, u); return { id: u.id, name: u.name, email: u.email, roleIds: u.roleIds || [], roles: (u.roleIds || []).map(id => db.roles.find(r => r.id === id)?.name).filter(Boolean), permissions }; }
-function compactState(db, user) { return { user: publicUser(db, user), permissions: userPermissions(db, user), permissionCatalog: PERMISSIONS, settings: sanitizeSettingsForClient(db.settings), roles: db.roles, categories: db.categories, items: db.items, deals: db.deals, tables: tableMap(db), orderTakers: db.orderTakers, paymentMethods: db.paymentMethods, users: db.users.map(sanitizeUserForClient), openOrders: db.orders.filter(o => ['OPEN','HELD'].includes(o.status) && hasBillLines(o)).sort((a,b) => new Date(a.createdAt) - new Date(b.createdAt)), paidOrders: db.orders.filter(o => o.status === 'PAID').slice(-200).reverse(), refunds: db.refunds.slice(-200).reverse(), activeShift: activeShift(db), auditLogs: db.auditLogs.slice(0, 120), backup: backupSummary(db), mediaTrash: (db.mediaTrash || []).slice(0, 50), printJobs: (db.printJobs || []).slice(0, 80), setup: setupStatus(db), printAgent: printAgentStatus(db) }; }
+function compactState(db, user) { return { sync: syncSnapshot(db), user: publicUser(db, user), permissions: userPermissions(db, user), permissionCatalog: PERMISSIONS, settings: sanitizeSettingsForClient(db.settings), roles: db.roles, categories: db.categories, items: db.items, deals: db.deals, tables: tableMap(db), orderTakers: db.orderTakers, paymentMethods: db.paymentMethods, users: db.users.map(sanitizeUserForClient), openOrders: db.orders.filter(o => ['OPEN','HELD'].includes(o.status) && hasBillLines(o)).sort((a,b) => new Date(a.createdAt) - new Date(b.createdAt)), paidOrders: db.orders.filter(o => o.status === 'PAID').slice(-200).reverse(), refunds: db.refunds.slice(-200).reverse(), activeShift: activeShift(db), auditLogs: db.auditLogs.slice(0, 120), backup: backupSummary(db), mediaTrash: (db.mediaTrash || []).slice(0, 50), printJobs: (db.printJobs || []).slice(0, 80), setup: setupStatus(db), printAgent: printAgentStatus(db) }; }
 function between(date, from, to) { const t = new Date(date).getTime(); const a = from ? new Date(`${from}T00:00:00`).getTime() : 0; const b = to ? new Date(`${to}T23:59:59`).getTime() : Date.now() + 86400000; return t >= a && t <= b; }
 function reportData(db, filters = {}) {
   const from = filters.from || '';
@@ -640,7 +720,7 @@ function finalAuditStatus(db) {
   if (activeOrdersWithZeroTotal) remaining.push('active orders with zero total need review');
   if (!hasR2Config()) remaining.push('Cloudflare R2 not configured');
   if (!printAgentKey(db)) remaining.push('cloud print agent key missing');
-  return { ok: remaining.length === 0, version: APP_VERSION, audit: { passwordsHashed: (db.users || []).every(u => Boolean(u.passwordHash) && !u.password), pinsHiddenFromClient: true, technicalBackupControlsHiddenFromClient: true, paidVoidBlocked: true, refundOverrunBlocked: true, tableDoubleBookingGuard: true, shiftCashRefundReconciliation: true, mediaCleanup: true, historyPreservedAfterCatalogDelete: true, cloudPrintQueue: true, reportTotalsFooters: true, mobileFriendlyPos: true, mobileCartDrawer: true, clientOnlyAdmin: true, r2HardDeleteOnReplace: true, r2HardDeleteOnDelete: true, r2DailyOrphanCleanup: true, taxFiscalFieldsReady: true, tenantStateKeyReady: true, defaultPasswordSetupGuard: true, enlargedFavicon: true, originalLogoFaviconMaxFill: true, reportsSubmenuInLeftAdminNav: true, reportOrganizationLogo: true, operationalScenarioMatrix: true, mobileBackCloseControls: true, mobileCategoryFirstFlow: true, mobileOpenBillsPayFlow: true, mobileAddItemsStayOnMenu: true, mobileBillDrawerManualOnly: true, setup }, counts: { categories: (db.categories || []).length, items: (db.items || []).length, deals: (db.deals || []).length, tables: (db.tables || []).length, openOrders: (db.orders || []).filter(o => ['OPEN','HELD'].includes(o.status) && hasBillLines(o)).length, paidOrders: (db.orders || []).filter(o => o.status === 'PAID').length, refunds: (db.refunds || []).length, pendingPrintJobs: (db.printJobs || []).filter(j => ['PENDING','PRINTING'].includes(j.status)).length }, remaining };
+  return { ok: remaining.length === 0, version: APP_VERSION, audit: { passwordsHashed: (db.users || []).every(u => Boolean(u.passwordHash) && !u.password), pinsHiddenFromClient: true, technicalBackupControlsHiddenFromClient: true, paidVoidBlocked: true, refundOverrunBlocked: true, tableDoubleBookingGuard: true, shiftCashRefundReconciliation: true, mediaCleanup: true, historyPreservedAfterCatalogDelete: true, cloudPrintQueue: true, reportTotalsFooters: true, mobileFriendlyPos: true, mobileCartDrawer: true, clientOnlyAdmin: true, r2HardDeleteOnReplace: true, r2HardDeleteOnDelete: true, r2DailyOrphanCleanup: true, taxFiscalFieldsReady: true, tenantStateKeyReady: true, defaultPasswordSetupGuard: true, enlargedFavicon: true, originalLogoFaviconMaxFill: true, reportsSubmenuInLeftAdminNav: true, reportOrganizationLogo: true, operationalScenarioMatrix: true, mobileBackCloseControls: true, mobileCategoryFirstFlow: true, mobileOpenBillsPayFlow: true, mobileAddItemsStayOnMenu: true, mobileBillDrawerManualOnly: true, crossDeviceLiveSync: true, autoCartSave: true, paidOrderRemoteClose: true, openBillsRealtimeRefresh: true, setup }, counts: { categories: (db.categories || []).length, items: (db.items || []).length, deals: (db.deals || []).length, tables: (db.tables || []).length, openOrders: (db.orders || []).filter(o => ['OPEN','HELD'].includes(o.status) && hasBillLines(o)).length, paidOrders: (db.orders || []).filter(o => o.status === 'PAID').length, refunds: (db.refunds || []).length, pendingPrintJobs: (db.printJobs || []).filter(j => ['PENDING','PRINTING'].includes(j.status)).length }, remaining };
 }
 
 
@@ -684,14 +764,16 @@ async function handleApi(req, res, pathname, query) {
     if (pathname === '/api/env-check' && req.method === 'GET') return send(res, 200, { ok: true, environment: { nodeEnv: process.env.NODE_ENV || 'development', databaseUrl: hasDatabaseUrl() ? 'loaded' : 'missing', dataStore: shouldUseCloudState() ? 'postgresql-cloud-state' : 'local-json', r2: hasR2Config() ? 'configured' : 'missing', production: productionMode() }, note: 'Safe status only. No secrets are returned.' });
     const db = await loadDb();
     assertOrderEngineState(db);
-    if (pathname === '/api/order-engine/status' && req.method === 'GET') return send(res, 200, { ok: true, version: APP_VERSION, store: shouldUseCloudState() ? 'postgresql-cloud-state' : 'local-json', rules: { oneTableOneActiveDineInOrder: true, paymentChangeCashOnly: true, paidOrdersLocked: true, tableReleasedAfterFullPayment: true, synchronousPersistence: true, hardcodedBusinessData: false, zeroPriceBlocked: true, emptyHoldBlocked: true, unpaidBillPrint: true, printAreaSafe: true, reportsVisible: true, mediaCleanup: true, automaticBackups: true, reportHistoryPreservedAfterItemDelete: true, fastUiNoFullScreenBlock: true, reportsAdminPanelFixed: true, cloudCredentialsHiddenFromClient: true, directPrintAgentDefault: true, softBusyIndicator: true, structuredReports: true, reportSubMenus: true, reportSpecificFilters: true, excelPerReport: true, billStyleReportPrint: true, professionalReports: true, reportTotalsFooters: true, xzCloseoutSections: true, cashDrawerReconciliation: true, full360Audit: true, secureSessionTokens: true, passwordsHashed: true, pinsHiddenFromClient: true, managerPinHidden: true, draftOrdersDoNotOccupyTables: true, cloudPrintQueue: true, autoBackupPersistenceFixed: true, lastAdminProtection: true, categoryDeleteGuard: true, posReportsRemoved: true, adminOnlyReports: true, professionalUiPolish: true, fastSoftBusyIndicator: true, imageAspectSafe: true, quickbooksStylePdfReports: true, thermalReportSlipPrint: true, noBoxPrintReports: true, formattingTemplateAudit: true, modernPosUiSystem: true, compactHeader: true, categoryColorSystem: true, adminBackOfficePolish: true, sameScreenWorkflowPolish: true, visibleIconsMarginsAudit: true, compactCartPanel: true, orderInfoGrid: true, singleLineBillActions: true, clientBackupActionsHidden: true, modernPosCompression: true, extremeCartCompression: true, largerVisibleBillItems: true, compactOrderMetaOneLine: true, compactTotalsActions: true, mediaFrameSafe: true, adminItemCategoryFilter: true, adminListSorting: true, faviconBranding: true, originalLogoFaviconMaxFill: true, receiptReportBranding: true, final360Audit: true, paidVoidBlocked: true, refundOverrunBlocked: true, refundedBillReopenBlocked: true, paymentCorrectionAfterRefundBlocked: true, technicalBackupControlsHiddenFromClient: true, shiftCashRefundReconciliation: true, mobileFriendlyPos: true, mobileCartDrawer: true, mobileResponsiveAdmin: true, clientOnlyAdmin: true, taxFiscalFieldsReady: true, tenantStateKeyReady: true, finalNotesCodeSideClosed: true, r2HardDeleteOnReplace: true, r2HardDeleteOnDelete: true, r2DailyOrphanCleanup: true, reportHistoryWithoutMediaDependency: true, enlargedFavicon: true, originalLogoFaviconMaxFill: true, reportsSubmenuInLeftAdminNav: true, reportOrganizationLogo: true, operationalScenarioMatrix: true, mobileBackCloseControls: true, mobileCategoryFirstFlow: true, mobileOpenBillsPayFlow: true, mobileAddItemsStayOnMenu: true, mobileBillDrawerManualOnly: true }, counts: { openOrders: db.orders.filter(o => ['OPEN','HELD'].includes(o.status) && hasBillLines(o)).length, paidOrders: db.orders.filter(o => o.status === 'PAID').length, categories: db.categories.length, items: db.items.length, pricedActiveItems: activePricedItems(db).length, deals: db.deals.length, pricedActiveDeals: activePricedDeals(db).length, tables: db.tables.length } });
+    if (pathname === '/api/order-engine/status' && req.method === 'GET') return send(res, 200, { ok: true, version: APP_VERSION, store: shouldUseCloudState() ? 'postgresql-cloud-state' : 'local-json', rules: { oneTableOneActiveDineInOrder: true, paymentChangeCashOnly: true, paidOrdersLocked: true, tableReleasedAfterFullPayment: true, synchronousPersistence: true, hardcodedBusinessData: false, zeroPriceBlocked: true, emptyHoldBlocked: true, unpaidBillPrint: true, printAreaSafe: true, reportsVisible: true, mediaCleanup: true, automaticBackups: true, reportHistoryPreservedAfterItemDelete: true, fastUiNoFullScreenBlock: true, reportsAdminPanelFixed: true, cloudCredentialsHiddenFromClient: true, directPrintAgentDefault: true, softBusyIndicator: true, structuredReports: true, reportSubMenus: true, reportSpecificFilters: true, excelPerReport: true, billStyleReportPrint: true, professionalReports: true, reportTotalsFooters: true, xzCloseoutSections: true, cashDrawerReconciliation: true, full360Audit: true, secureSessionTokens: true, passwordsHashed: true, pinsHiddenFromClient: true, managerPinHidden: true, draftOrdersDoNotOccupyTables: true, cloudPrintQueue: true, autoBackupPersistenceFixed: true, lastAdminProtection: true, categoryDeleteGuard: true, posReportsRemoved: true, adminOnlyReports: true, professionalUiPolish: true, fastSoftBusyIndicator: true, imageAspectSafe: true, quickbooksStylePdfReports: true, thermalReportSlipPrint: true, noBoxPrintReports: true, formattingTemplateAudit: true, modernPosUiSystem: true, compactHeader: true, categoryColorSystem: true, adminBackOfficePolish: true, sameScreenWorkflowPolish: true, visibleIconsMarginsAudit: true, compactCartPanel: true, orderInfoGrid: true, singleLineBillActions: true, clientBackupActionsHidden: true, modernPosCompression: true, extremeCartCompression: true, largerVisibleBillItems: true, compactOrderMetaOneLine: true, compactTotalsActions: true, mediaFrameSafe: true, adminItemCategoryFilter: true, adminListSorting: true, faviconBranding: true, originalLogoFaviconMaxFill: true, receiptReportBranding: true, final360Audit: true, paidVoidBlocked: true, refundOverrunBlocked: true, refundedBillReopenBlocked: true, paymentCorrectionAfterRefundBlocked: true, technicalBackupControlsHiddenFromClient: true, shiftCashRefundReconciliation: true, mobileFriendlyPos: true, mobileCartDrawer: true, mobileResponsiveAdmin: true, clientOnlyAdmin: true, taxFiscalFieldsReady: true, tenantStateKeyReady: true, finalNotesCodeSideClosed: true, r2HardDeleteOnReplace: true, r2HardDeleteOnDelete: true, r2DailyOrphanCleanup: true, reportHistoryWithoutMediaDependency: true, enlargedFavicon: true, originalLogoFaviconMaxFill: true, reportsSubmenuInLeftAdminNav: true, reportOrganizationLogo: true, operationalScenarioMatrix: true, mobileBackCloseControls: true, mobileCategoryFirstFlow: true, mobileOpenBillsPayFlow: true, mobileAddItemsStayOnMenu: true, mobileBillDrawerManualOnly: true, crossDeviceLiveSync: true, autoCartSave: true, paidOrderRemoteClose: true, openBillsRealtimeRefresh: true }, counts: { openOrders: db.orders.filter(o => ['OPEN','HELD'].includes(o.status) && hasBillLines(o)).length, paidOrders: db.orders.filter(o => o.status === 'PAID').length, categories: db.categories.length, items: db.items.length, pricedActiveItems: activePricedItems(db).length, deals: db.deals.length, pricedActiveDeals: activePricedDeals(db).length, tables: db.tables.length } });
     if (pathname === '/api/audit/status' && req.method === 'GET') return send(res, 200, finalAuditStatus(db));
     if (pathname === '/api/audit/final-360' && req.method === 'GET') return send(res, 200, finalAuditStatus(db));
     if (pathname === '/api/ops/scenarios' && req.method === 'GET') return send(res, 200, operationalScenarioMatrix(db));
     if (pathname === '/api/login' && req.method === 'POST') { const body = await parseBody(req); const user = db.users.find(u => u.email.toLowerCase() === String(body.email || '').toLowerCase() && u.active); if (!user || !verifyUserPassword(user, body.password)) return send(res, 401, { ok: false, error: 'Invalid login' }); const token = createSession(user, userPermissions(db, user)); audit(db, user, 'LOGIN', { email: user.email }); await saveDb(db); return send(res, 200, { ok: true, token, user: publicUser(db, user) }); }
     const user = requireAuth(req, db);
+    if (pathname === '/api/sync/status' && req.method === 'GET') return send(res, 200, { ok: true, sync: syncSnapshot(db, query.orderId || '') });
     if (pathname === '/api/account/change-password' && req.method === 'POST') { const b = await parseBody(req); const u = db.users.find(x => x.id === user.id); if (!u) throw Object.assign(new Error('User not found'), { status: 404 }); if (!b.currentPassword || !verifyUserPassword(u, b.currentPassword)) throw Object.assign(new Error('Current password is incorrect'), { status: 403 }); if (!b.newPassword || String(b.newPassword).length < 8) throw Object.assign(new Error('New password must be at least 8 characters'), { status: 422 }); if (isDefaultPasswordValue(b.newPassword)) throw Object.assign(new Error('Default password is not allowed for production'), { status: 422 }); setUserPassword(u, String(b.newPassword)); audit(db, user, 'PASSWORD_CHANGED', { userId: u.id, email: u.email }); await saveDb(db); return send(res, 200, { ok: true }); }
     if (pathname === '/api/state') return send(res, 200, { ok: true, data: compactState(db, user) });
+    if (pathname === '/api/orders/cart-sync' && req.method === 'POST') { requirePerm(db, user, 'pos.edit'); return saveCartSync(res, db, user, await parseBody(req)); }
 
     if (pathname === '/api/upload-image' && req.method === 'POST') { requirePerm(db, user, 'admin.menu'); const body = await parseBody(req); const match = String(body.dataUrl || '').match(/^data:(image\/[a-zA-Z0-9.+-]+);base64,(.+)$/); if (!match) throw Object.assign(new Error('Invalid image data'), { status: 422 }); const contentType = match[1]; const bytes = Buffer.from(match[2], 'base64'); assertImage({ contentType, bytes }); const ext = contentType.split('/')[1].replace('jpeg', 'jpg').replace('svg+xml', 'svg'); const folder = ['category','item','deal','logo','receipt'].includes(body.folder) ? body.folder : 'uploads'; const fallbackName = `${Date.now()}-${safeName(body.filename || 'image').replace(/\.[a-z0-9]+$/i, '')}.${ext}`; if (hasR2Config()) { const key = makeMediaKey({ tenant: 'swifttill', folder, filename: body.filename || fallbackName }); const uploaded = await uploadImageToR2({ key, body: bytes, contentType }); audit(db, user, 'R2_IMAGE_UPLOADED', { key: uploaded.key, url: uploaded.url, folder }); await saveDb(db); return send(res, 200, { ok: true, storage: 'r2', url: uploaded.url || publicUrlForKey(uploaded.key), key: uploaded.key }); } if (productionMode()) throw Object.assign(new Error('Cloudflare R2 is required for production uploads'), { status: 503 }); ensureDir(path.join(PUBLIC_DIR, 'uploads')); fs.writeFileSync(path.join(PUBLIC_DIR, 'uploads', fallbackName), bytes); audit(db, user, 'LOCAL_IMAGE_UPLOADED_DEV_ONLY', { file: fallbackName, folder }); await saveDb(db); return send(res, 200, { ok: true, storage: 'local-dev', url: `/uploads/${fallbackName}`, key: fallbackName }); }
 
