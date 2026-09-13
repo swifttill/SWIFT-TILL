@@ -1,3 +1,4 @@
+require("dotenv").config();
 const { hashPassword } = require('../auth/src');
 const { getPrisma, hasDatabaseUrl } = require('./src/client');
 
