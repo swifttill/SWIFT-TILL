@@ -1,8 +1,8 @@
 {
   "name": "swifttill-pos-monorepo",
-  "version": "26.0.0",
+  "version": "27.0.0",
   "private": true,
-  "description": "SwiftTill POS V26: professional UI/report formatting templates, QuickBooks-style PDF reports, and thermal report slip printing.",
+  "description": "SwiftTill POS V27: modern POS UI system rebuild, compact admin header, category color accents, action button theming and professional spacing audit.",
   "workspaces": [
     "apps/api",
     "apps/web",

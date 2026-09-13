@@ -37,6 +37,18 @@ function hasPositiveTotal(o=currentOrder){ return calcTotals(o).total > 0; }
 function requirePositiveTotal(message='Order total must be greater than Rs 0. Set item/deal price in Admin first.'){ if(!hasPositiveTotal()){ toast(message, true); return false; } return true; }
 function requireNotRapidClick(){ const n=Date.now(); if(n-lastActionAt<350) return false; lastActionAt=n; return true; }
 
+function categoryTone(name=''){
+  const n = String(name || '').toLowerCase();
+  if(/burger|sandwich|wrap|zinger|beef|chicken/.test(n)) return 'tone-burger';
+  if(/fries|side|loaded|wings|roll|snack|chips/.test(n)) return 'tone-fries';
+  if(/drink|beverage|cola|coke|pepsi|water|juice|shake|tea|coffee/.test(n)) return 'tone-drinks';
+  if(/dessert|cake|sweet|ice|cream|cup|brownie/.test(n)) return 'tone-dessert';
+  if(/pizza|pasta|italian/.test(n)) return 'tone-pizza';
+  if(/deal|combo|meal|offer|family/.test(n)) return 'tone-deal';
+  return 'tone-default';
+}
+function actionIcon(name){ return `<span class="btn-ico">${name}</span>`; }
+
 function money(v){ return `Rs ${Number(v||0).toLocaleString('en-PK',{maximumFractionDigits:0})}`; }
 function esc(v){ return String(v ?? '').replace(/[&<>"']/g, s => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[s])); }
 function uid(){ return 'ln_' + Math.random().toString(16).slice(2) + Date.now().toString(16); }
@@ -116,8 +128,8 @@ function renderShell(){
   bindSidebar(); bindRailNav(); renderWorkspace(); renderBill();
 }
 function renderAdminShell(){
-  app.innerHTML = `<div class="admin-screen">${setupBanner()}<section class="panel topbar">${renderTopbar()}<div class="admin-top-actions"><button class="ghost-btn" id="backPosBtn">Back to POS</button></div></section><section class="panel admin-page" id="workspace"></section></div><div id="modalRoot"></div>`;
-  $('#backPosBtn').onclick = () => { screen='pos'; renderShell(); };
+  app.innerHTML = `<div class="admin-screen">${setupBanner()}<section class="panel topbar admin-topbar">${renderTopbar()}</section><section class="panel admin-page" id="workspace"></section></div><div id="modalRoot"></div>`;
+  $('#backPosBtn') && ($('#backPosBtn').onclick = () => { screen='pos'; centerMode='menu'; renderShell(); });
   $('#logoutBtn') && ($('#logoutBtn').onclick = logout);
   $('#shiftBtn') && ($('#shiftBtn').onclick = () => state.activeShift ? openCloseShift() : openOpenShift());
   renderAdmin($('#workspace'));
@@ -131,7 +143,7 @@ function renderSidebar(){
   <div class="sidebar-scroll">
     <div class="section-title"><h3>Categories</h3><button id="showAll">View All</button></div>
     <button class="cat-btn ${categoryId==='all'?'active':''}" data-cat="all"><span>All Items</span></button>
-    ${state.categories.filter(c=>c.active).sort((a,b)=>(a.sort||0)-(b.sort||0)).map(c=>`<button class="cat-btn ${categoryId===c.id?'active':''}" data-cat="${esc(c.id)}">${c.imageUrl?`<img src="${esc(c.imageUrl)}" alt="">`:''}<span>${esc(c.name)}</span></button>`).join('')}
+    ${state.categories.filter(c=>c.active).sort((a,b)=>(a.sort||0)-(b.sort||0)).map(c=>`<button class="cat-btn ${categoryTone(c.name)} ${categoryId===c.id?'active':''}" data-cat="${esc(c.id)}">${c.imageUrl?`<img src="${esc(c.imageUrl)}" alt="">`:''}<span>${esc(c.name)}</span></button>`).join('')}
     <div class="divider"></div>
     <div class="section-title"><h3>Deals</h3></div>
     <button class="cat-btn no-icon ${centerMode==='deals'?'active':''}" id="dealsBtn"><span>Special Deals</span></button>
@@ -141,18 +153,20 @@ function renderSidebar(){
 function renderRailNav(){
   const openCount = state?.openOrders?.length || 0;
   const adminAllowed = can('admin.menu') || can('admin.users') || can('admin.settings') || can('admin.roles') || can('admin.payments') || can('reports.view');
-  return `<button class="${centerMode==='open'?'active':''}" data-rail="open" title="Open Orders"><span class="rail-ico">▤</span><span class="rail-label">Open Orders</span><span class="mini-badge">${openCount}</span></button>
-  <button class="${screen==='admin'?'active':''} ${!adminAllowed?'locked':''}" data-rail="admin" title="Admin Panel"><span class="rail-ico">⚙</span><span class="rail-label">Admin Panel</span></button>`;
+  return `<button class="${centerMode==='open'?'active':''} rail-open" data-rail="open" title="Open Orders"><span class="rail-ico">▤</span><span class="rail-label">Open Orders</span><span class="mini-badge">${openCount}</span></button>
+  <button class="${screen==='admin'?'active':''} ${!adminAllowed?'locked':''} rail-admin" data-rail="admin" title="Admin Panel"><span class="rail-ico">⚙</span><span class="rail-label">Admin Panel</span></button>`;
 }
 function renderTopbar(){
   const d = new Date(); const active = state.activeShift;
-  return `<div class="hello"><h2>${esc(state.settings.businessName || 'SwiftTill POS')}</h2><p>Fast billing workspace for active restaurant operations.</p></div>
+  const back = screen === 'admin' ? `<button class="ghost-btn top-action back-pos-action" id="backPosBtn">← Back to POS</button>` : '';
+  return `<div class="hello"><h2>${esc(state.settings.businessName || 'SwiftTill POS')}</h2><p>${screen==='admin'?'Back office controls, reports and setup.':'Fast billing workspace for active restaurant operations.'}</p></div>
   <div class="top-items">
-    <div class="top-pill">📅 <span><b>${d.toLocaleDateString('en-GB',{weekday:'short',day:'2-digit',month:'short',year:'numeric'})}</b>${d.toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})}</span></div>
-    <div class="top-pill">👤 <span><b>${esc(state.user.name)}</b>${esc(state.user.roles.join(', ') || 'User')}</span></div>
-    <div class="top-pill"><span class="status-dot"></span><span><b>${esc(state.settings.branchName)}</b>System Online</span></div>
-    <button class="ghost-btn" id="shiftBtn">${active?'Close Shift':'Open Shift'}</button>
-    <button class="ghost-btn" id="logoutBtn">Logout</button>
+    <div class="top-pill date-pill">📅 <span><b>${d.toLocaleDateString('en-GB',{weekday:'short',day:'2-digit',month:'short',year:'numeric'})}</b>${d.toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})}</span></div>
+    <div class="top-pill user-pill">👤 <span><b>${esc(state.user.name)}</b>${esc(state.user.roles.join(', ') || 'User')}</span></div>
+    <div class="top-pill branch-pill"><span class="status-dot"></span><span><b>${esc(state.settings.branchName)}</b>System Online</span></div>
+    ${back}
+    <button class="ghost-btn shift-action" id="shiftBtn">${active?'Close Shift':'Open Shift'}</button>
+    <button class="ghost-btn logout-action" id="logoutBtn">Logout</button>
   </div>`;
 }
 function bindSidebar(){
@@ -181,7 +195,7 @@ function logout(){ localStorage.removeItem('swifttill_token'); location.reload()
 function renderWorkspace(){
   const ws = $('#workspace');
   if(screen === 'reports') return renderReports(ws);
-  ws.innerHTML = `<div class="seg"><button class="${centerMode==='menu'?'active':''}" data-mode="menu">🍴 Menu</button><button class="${centerMode==='tables'?'active':''}" data-mode="tables">▣ Tables</button><button class="${centerMode==='deals'?'active':''}" data-mode="deals">% Deals</button></div><div class="crumb">⌂ ${currentOrder ? `${formatType(currentOrder.type)} › ${orderContext(currentOrder)} › Add items to order` : 'Start New Order › Select type › Add items'}</div><div class="center-scroll" id="centerScroll"></div>`;
+  ws.innerHTML = `<div class="seg modern-seg"><button class="${centerMode==='menu'?'active':''}" data-mode="menu"><span>🍴</span> Menu</button><button class="${centerMode==='tables'?'active':''}" data-mode="tables"><span>▦</span> Tables</button><button class="${centerMode==='deals'?'active':''}" data-mode="deals"><span>%</span> Deals</button></div><div class="crumb">⌂ ${currentOrder ? `${formatType(currentOrder.type)} › ${orderContext(currentOrder)} › Add items to order` : 'Start New Order › Select type › Add items'}</div><div class="center-scroll" id="centerScroll"></div>`;
   $$('[data-mode]', ws).forEach(b => b.onclick = () => { centerMode=b.dataset.mode; renderWorkspace(); });
   if(centerMode==='tables') renderTables(); else if(centerMode==='deals') renderDeals(); else if(centerMode==='open') renderOpenOrders(); else renderMenu();
 }
@@ -209,9 +223,9 @@ function renderMenu(q=''){
   $('#centerScroll').innerHTML = `${currentOrder?renderTablesStrip():''}<div class="card subcard"><div class="module-title"><div><h3>Menu Items</h3><div class="menu-current">${esc(selectedCat)} • ${items.length} item${items.length===1?'':'s'}</div></div><button class="ghost-btn" onclick="centerMode='tables';renderShell()">View Tables</button></div><div class="item-grid">${items.map(itemCard).join('') || '<div class="empty-cart">No matching items.</div>'}</div></div>`;
   $$('[data-add-item]').forEach(b=>b.onclick=()=>addItem(b.dataset.addItem)); bindTableCards();
 }
-function itemCard(i){ const cat=state.categories.find(c=>c.id===i.categoryId)?.name||''; const noPrice=numericPrice(i.price)<=0; const disabled=i.soldOut||noPrice; return `<button class="item-card clickable-card ${disabled?'sold':''}" data-add-item="${esc(i.id)}" ${disabled?'disabled':''}>${i.soldOut?'<div class="sold-badge">SOLD OUT</div>':noPrice?'<div class="sold-badge price-missing">SET PRICE</div>':''}<div class="item-img">${i.imageUrl?`<img src="${esc(i.imageUrl)}" alt="">`:'<span class="image-placeholder">No image</span>'}</div><div class="item-body"><div><h4>${esc(i.name)}</h4><p>${esc(cat)}</p><div class="price ${noPrice?'danger-text':''}">${noPrice?'Price required':money(i.price)}</div></div></div></button>`; }
+function itemCard(i){ const cat=state.categories.find(c=>c.id===i.categoryId)?.name||''; const noPrice=numericPrice(i.price)<=0; const disabled=i.soldOut||noPrice; const tone=categoryTone(cat||i.name); return `<button class="item-card clickable-card ${tone} ${disabled?'sold':''}" data-add-item="${esc(i.id)}" ${disabled?'disabled':''}>${i.soldOut?'<div class="sold-badge">SOLD OUT</div>':noPrice?'<div class="sold-badge price-missing">SET PRICE</div>':''}<div class="card-accent"></div><div class="item-img">${i.imageUrl?`<img src="${esc(i.imageUrl)}" alt="">`:'<span class="image-placeholder">No image</span>'}</div><div class="item-body"><div><h4>${esc(i.name)}</h4><p>${esc(cat)}</p><div class="price ${noPrice?'danger-text':''}">${noPrice?'Price required':money(i.price)}</div></div><span class="item-add-hint">＋</span></div></button>`; }
 function renderDeals(){
-  $('#centerScroll').innerHTML = `<div class="card subcard"><div class="module-title"><h3>Deals</h3>${can('admin.menu')?'<button class="ghost-btn" onclick="screen=\'admin\';adminTab=\'deals\';renderShell()">Manage Deals</button>':''}</div><div class="item-grid">${state.deals.filter(d=>d.active).sort((a,b)=>(a.sort||0)-(b.sort||0)).map(d=>{const noPrice=numericPrice(d.price)<=0; return `<button class="item-card clickable-card deal-card ${noPrice?'sold':''}" data-add-deal="${esc(d.id)}" ${noPrice?'disabled':''}>${noPrice?'<div class="sold-badge price-missing">SET PRICE</div>':'<div class="popular">Deal</div>'}<div class="item-img">${d.imageUrl?`<img src="${esc(d.imageUrl)}" alt="">`:'<span class="image-placeholder">No image</span>'}</div><div class="item-body"><div><h4>${esc(d.name)}</h4><p>${esc(d.description||'Deal')}</p><div class="price ${noPrice?'danger-text':''}">${noPrice?'Price required':money(d.price)}</div></div></div></button>`}).join('') || '<div class="empty-cart">No active deals. Add real deals from Admin → Deals.</div>'}</div></div>`;
+  $('#centerScroll').innerHTML = `<div class="card subcard"><div class="module-title"><h3>Deals</h3>${can('admin.menu')?'<button class="ghost-btn" onclick="screen=\'admin\';adminTab=\'deals\';renderShell()">Manage Deals</button>':''}</div><div class="item-grid">${state.deals.filter(d=>d.active).sort((a,b)=>(a.sort||0)-(b.sort||0)).map(d=>{const noPrice=numericPrice(d.price)<=0; return `<button class="item-card clickable-card deal-card tone-deal ${noPrice?'sold':''}" data-add-deal="${esc(d.id)}" ${noPrice?'disabled':''}>${noPrice?'<div class="sold-badge price-missing">SET PRICE</div>':'<div class="popular">Deal</div>'}<div class="card-accent"></div><div class="item-img">${d.imageUrl?`<img src="${esc(d.imageUrl)}" alt="">`:'<span class="image-placeholder">No image</span>'}</div><div class="item-body"><div><h4>${esc(d.name)}</h4><p>${esc(d.description||'Deal')}</p><div class="price ${noPrice?'danger-text':''}">${noPrice?'Price required':money(d.price)}</div></div><span class="item-add-hint">＋</span></div></button>`}).join('') || '<div class="empty-cart">No active deals. Add real deals from Admin → Deals.</div>'}</div></div>`;
   $$('[data-add-deal]').forEach(b=>b.onclick=()=>addDeal(b.dataset.addDeal));
 }
 function renderOpenOrders(){

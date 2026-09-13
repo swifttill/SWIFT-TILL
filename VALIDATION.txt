@@ -1,4 +1,4 @@
-SwiftTill POS V26 Formatting / Reports / Print Templates Audit
+SwiftTill POS V27 Modern POS UI System Rebuild
 
 API syntax: PASS
 Web JS syntax: PASS
@@ -7,9 +7,10 @@ Print agent syntax: PASS
 ZIP integrity: PASS
 
 Key fixes:
-- QuickBooks-style A4/PDF report layout
-- 80mm thermal report slip layout
-- No rounded metric boxes in print output
-- Report details tables with totals rows
-- Separate PDF/A4 and Thermal Print buttons
-- Admin-only reports preserved
+- Compact header and top action row
+- Back to POS placement fixed
+- Category color system
+- Modern item/card/action button styling
+- Image aspect safety
+- Admin back-office polish
+- Same-screen POS workflow preserved

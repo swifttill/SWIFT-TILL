@@ -70,3 +70,20 @@ This phase audits formatting beyond the POS screen and fixes report templates fo
 - Thermal printing: 80mm receipt-style report slip with no boxes, no wide tables, and no browser-style card layout.
 
 It also keeps reports admin-only, keeps Excel/CSV exports report-specific, and keeps V24/V25 security, backup, history, media cleanup and print-agent work.
+
+
+## Phase 27 — Modern POS UI System Rebuild
+
+This phase audits and polishes the visible POS/admin interface while preserving V24-V26 operational hardening.
+
+Key changes:
+- Compact top header and Back to POS moved into the top action cluster.
+- POS Reports remain admin-only.
+- Category-aware colors for menu/category cards: burgers, fries/sides, drinks, desserts, pizza and deals.
+- Distinct action styling for New Order, Hold, Pay, Print, Admin and Logout.
+- Menu thumbnails use safe contain mode; no stretched images.
+- Margins, gaps, border radii, shadows and icon visibility are tightened for modern POS screens.
+- Same-screen POS workflow remains: order, table/menu/deal selection, cart, hold/pay/print actions.
+- Admin panel gets a more professional back-office shell without exposing cloud credentials.
+
+Version: 27.0.0-modern-pos-ui-system
