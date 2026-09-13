@@ -203,3 +203,14 @@ Real POS order engine hardening: synchronous persistence, stricter order/payment
 ## Phase 14 — Production Data Clean
 
 This phase removes demo restaurant/catalog/table/order-taker seed data from the runtime bootstrap. The app now starts with only bootstrap access, roles, permissions and payment methods. Real business logo, categories, items, deals, tables and order takers must be added from Admin and saved to Neon/R2. It also fixes `/api/order-engine/status` database initialization.
+
+
+## Phase 15 — POS Flow Guards + Processing Overlay
+
+Fixes live POS issues reported after V14:
+- Empty dine-in orders no longer make tables busy.
+- Hold, save, pay and split bill require at least one item/deal line.
+- Open Orders and table busy status ignore empty drafts.
+- `/api/order-engine/status` reports Phase 15 and real counts.
+- Global processing overlay blocks double-click/interruption during API, upload, login, save, payment, report and admin operations.
+- Sidebar Deals buttons no longer truncate/hide text.
