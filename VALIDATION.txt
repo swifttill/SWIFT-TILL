@@ -1,20 +1,17 @@
-SwiftTill POS Monorepo V8 validation
+SwiftTill POS Monorepo V9 Validation
 
-Generated: 2026-09-13
+API syntax PASS
+DB client syntax PASS
+DB adapter syntax PASS
+Auth package syntax PASS
+Auth smoke test PASS
+R2 boundary syntax PASS
+Frontend JS syntax PASS
+Print agent syntax PASS
+ZIP integrity PASS
 
-Checks:
-- Existing V7 runtime preserved
-- package.json updated to V8
-- .gitignore added
-- .env.example production variables added
-- Prisma schema added
-- DB boundary syntax checked
-- R2 boundary syntax checked
-- GitHub validation workflow added
-- Production foundation docs added
-- ZIP excludes node_modules, build cache, test database and .env
-
-Manual next check after extract:
-  npm install
-  npm run validate
-  npm start
+Scope:
+- Real database/auth foundation added.
+- Existing approved POS UI/runtime preserved.
+- No secrets included.
+- No node_modules, no build cache, no test database.

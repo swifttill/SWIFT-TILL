@@ -1,8 +1,8 @@
 {
   "name": "swifttill-pos-monorepo",
-  "version": "8.0.0",
+  "version": "9.0.0",
   "private": true,
-  "description": "SwiftTill POS V8 production foundation: online cloud POS, backend API, admin panel, Neon PostgreSQL schema, Cloudflare R2 storage layer, reports, receipt formats, roles and local print agent.",
+  "description": "SwiftTill POS V9 real database and auth foundation: Neon PostgreSQL, Prisma migrations, password hashing, token sessions, role/permission enforcement, and production-ready auth/db boundaries.",
   "workspaces": [
     "apps/api",
     "apps/web",
@@ -12,13 +12,27 @@
   "scripts": {
     "start": "node apps/api/server.js",
     "dev": "node apps/api/server.js",
-    "check": "node --check apps/api/server.js && node --check packages/db/src/client.js && node --check packages/storage/src/r2.js && node --check apps/print-agent/agent.js",
+    "check": "node --check apps/api/server.js && node --check packages/db/src/client.js && node --check packages/db/src/adapter.js && node --check packages/auth/src/index.js && node --check packages/storage/src/r2.js && node --check apps/print-agent/agent.js",
     "check:web": "node -e \"new Function(require('fs').readFileSync('apps/web/public/assets/js/app.js','utf8')); console.log('web js ok')\"",
     "seed:reset": "node scripts/reset-local-db.js",
     "db:schema": "echo Prisma schema is in packages/db/prisma/schema.prisma",
-    "validate": "npm run check && npm run check:web"
+    "validate": "npm run check && npm run check:web && npm run auth:smoke",
+    "db:generate": "prisma generate --schema packages/db/prisma/schema.prisma",
+    "db:migrate": "prisma migrate deploy --schema packages/db/prisma/schema.prisma",
+    "db:push": "prisma db push --schema packages/db/prisma/schema.prisma",
+    "db:seed": "node packages/db/seed.js",
+    "auth:smoke": "node packages/auth/smoke-test.js"
   },
   "engines": {
     "node": ">=18.0.0"
+  },
+  "dependencies": {
+    "bcryptjs": "^2.4.3",
+    "jsonwebtoken": "^9.0.2",
+    "zod": "^3.23.8",
+    "@prisma/client": "^5.22.0"
+  },
+  "devDependencies": {
+    "prisma": "^5.22.0"
   }
 }

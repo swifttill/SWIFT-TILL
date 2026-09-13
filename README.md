@@ -1,3 +1,53 @@
+# SwiftTill POS Monorepo V9
+
+Real database and auth foundation for SwiftTill POS.
+
+V9 keeps the approved V7/V8 POS UI direction and adds the production layer for Neon PostgreSQL, Prisma, password hashing, token sessions, seeded users/roles/permissions, and protected-route planning.
+
+## Run locally
+
+```powershell
+npm install
+npm start
+```
+
+Open: http://localhost:5174
+
+## Real database setup
+
+```powershell
+copy .env.example .env
+# edit DATABASE_URL and SESSION_SECRET
+npm run db:generate
+npm run db:push
+npm run db:seed
+npm start
+```
+
+## Login
+
+```text
+admin@swifttill.local / admin123
+manager@swifttill.local / manager123
+cashier@swifttill.local / cashier123
+```
+
+## Phase 9 additions
+
+- Auth package with password hashing and signed sessions.
+- Prisma/Neon database adapter boundary.
+- PostgreSQL seed script for organization, branch, roles, permissions and users.
+- Neon setup guide.
+- Production env structure.
+- DB scripts: generate, push, migrate, seed.
+- Validation includes auth smoke test.
+
+## Clean package policy
+
+No `node_modules`, no build cache, no test database, no `.env` secrets.
+
+---
+
 # SwiftTill POS Monorepo V8
 
 SwiftTill POS V8 is the production-foundation package for the real cloud project. It preserves the approved V7 POS/admin UI while adding the structure needed for Neon PostgreSQL, Cloudflare R2, GitHub workflow, Render/Vercel deployment and local thermal print-agent integration.

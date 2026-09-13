@@ -1,9 +1,15 @@
 {
   "name": "@swifttill/api",
-  "version": "6.0.0",
+  "version": "9.0.0",
   "private": true,
   "main": "server.js",
   "scripts": {
     "start": "node server.js"
+  },
+  "dependencies": {
+    "bcryptjs": "^2.4.3",
+    "jsonwebtoken": "^9.0.2",
+    "zod": "^3.23.8",
+    "@prisma/client": "^5.22.0"
   }
 }

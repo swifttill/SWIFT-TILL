@@ -1,32 +1,10 @@
-'use strict';
+const { getPrisma, requirePrisma, hasDatabaseUrl } = require('./adapter');
 
-/**
- * Production DB adapter boundary.
- * V8 keeps the current local JSON runtime working, but all new backend code
- * must call this boundary so Neon/PostgreSQL can replace local JSON cleanly.
- */
-const STORAGE_MODE = process.env.STORAGE_MODE || 'local-json';
-
-function getStorageMode() {
-  return STORAGE_MODE;
+async function databaseHealth() {
+  if (!hasDatabaseUrl()) return { mode: 'local-json', ok: true, note: 'DATABASE_URL not set; local development fallback active.' };
+  const prisma = await getPrisma();
+  await prisma.$queryRaw`SELECT 1`;
+  return { mode: 'postgresql', ok: true };
 }
 
-function requireDatabaseUrl() {
-  if (!process.env.DATABASE_URL) {
-    throw new Error('DATABASE_URL is required when STORAGE_MODE=postgres');
-  }
-  return process.env.DATABASE_URL;
-}
-
-function assertProductionDatabaseReady() {
-  if ((process.env.STORAGE_MODE || '').toLowerCase() === 'postgres') {
-    requireDatabaseUrl();
-  }
-  return true;
-}
-
-module.exports = {
-  getStorageMode,
-  requireDatabaseUrl,
-  assertProductionDatabaseReady
-};
+module.exports = { getPrisma, requirePrisma, hasDatabaseUrl, databaseHealth };
