@@ -176,7 +176,7 @@ http://localhost:5174/api/health
 http://localhost:5174/api/env-check
 ```
 
-## Phase 12 — Production Cleanup
+## Phase 12 — Real POS Order Engine
 
 This package adds production cleanup for Render deployment:
 
@@ -193,3 +193,8 @@ Live checks after deploy:
 https://swift-till.onrender.com/api/health
 https://swift-till.onrender.com/api/env-check
 ```
+
+
+## Phase 13
+
+Real POS order engine hardening: synchronous persistence, stricter order/payment validation, cash-change rules and `/api/order-engine/status`.
