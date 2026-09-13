@@ -214,3 +214,14 @@ Fixes live POS issues reported after V14:
 - `/api/order-engine/status` reports Phase 15 and real counts.
 - Global processing overlay blocks double-click/interruption during API, upload, login, save, payment, report and admin operations.
 - Sidebar Deals buttons no longer truncate/hide text.
+
+
+## Phase 16 — Operational Audit Fixes
+
+- Blocks zero-price items and deals in POS billing.
+- Makes Sale Price required and obvious in Admin item/deal editors.
+- Prevents Rs 0 payment modal from opening.
+- Keeps empty orders from holding, paying, or making tables busy.
+- Adds lightweight fast cloud-save indicator instead of heavy full-screen freeze.
+- Removes hardcoded login logo image fallback; runtime uses real Admin Settings logo/brand.
+- Updates Cloud/R2 status wording to production-connected.

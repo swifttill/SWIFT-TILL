@@ -1,7 +1,7 @@
-SwiftTill POS V14 validation
+SwiftTill POS V16 validation
 API syntax PASS
 Web JS syntax PASS
-DB seed syntax PASS
-No demo menu/table/taker seed PASS
-Order engine status init PASS
+CSS audit PASS
+Zero-price guard PASS
+Payment total guard PASS
 ZIP integrity PASS

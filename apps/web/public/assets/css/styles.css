@@ -282,16 +282,19 @@ button{touch-action:manipulation} button:disabled{cursor:not-allowed;opacity:.52
 /* Phase 15: flow guards, readable sidebar deals, and global processing lock */
 .cat-btn.no-icon{grid-template-columns:minmax(0,1fr) !important;}
 .cat-btn.no-icon span{grid-column:1/-1;white-space:normal;line-height:1.15;overflow:visible;text-overflow:clip;}
-#globalBusy{position:fixed;inset:0;z-index:99999;display:none;place-items:center;background:rgba(7,18,40,.32);backdrop-filter:blur(7px);pointer-events:all;}
+#globalBusy{position:fixed;top:12px;left:50%;right:auto;bottom:auto;transform:translateX(-50%);z-index:99999;display:none;place-items:center;background:transparent;backdrop-filter:none;pointer-events:none;}
 #globalBusy.show{display:grid;}
-.busy-card{width:min(330px,calc(100vw - 36px));border:1px solid rgba(255,255,255,.68);border-radius:22px;background:rgba(255,255,255,.96);box-shadow:0 28px 90px rgba(7,35,90,.32);padding:20px;text-align:center;color:var(--navy);}
-.busy-card b{display:block;margin:10px 0 4px;font-size:17px;}
-.busy-card p{margin:0;color:var(--muted);font-size:13px;}
+.busy-card{width:min(300px,calc(100vw - 36px));border:1px solid rgba(13,100,246,.22);border-radius:16px;background:rgba(255,255,255,.98);box-shadow:0 14px 38px rgba(7,35,90,.18);padding:10px 12px;text-align:left;color:var(--navy);display:grid;grid-template-columns:1fr auto;gap:5px;align-items:center;}
+.busy-card b{display:block;margin:0;font-size:13px;}
+.busy-card p{margin:0;color:var(--muted);font-size:11px;grid-column:1/-1;}
 .busy-bar{height:7px;border-radius:999px;background:#e8f0fb;overflow:hidden;position:relative;}
 .busy-bar span{position:absolute;inset:0 auto 0 0;width:45%;border-radius:999px;background:linear-gradient(90deg,var(--blue),#63a6ff);animation:busySlide 1s ease-in-out infinite;}
 @keyframes busySlide{0%{transform:translateX(-110%)}50%{transform:translateX(70%)}100%{transform:translateX(230%)}}
-body.is-busy button,body.is-busy input,body.is-busy select,body.is-busy textarea{pointer-events:none;}
+body.is-busy button,body.is-busy input,body.is-busy select,body.is-busy textarea{pointer-events:none;opacity:.84;} #globalBusy button,#globalBusy input{pointer-events:none;}
 button:disabled{opacity:.52;cursor:not-allowed;box-shadow:none!important;}
 .deal-card .item-body p{white-space:normal;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;}
 
 .brand-text{display:grid;place-items:center;color:var(--blue);font-weight:950;line-height:1}.brand-text b{font-size:28px}.brand-text span{font-size:13px;letter-spacing:.2em;color:var(--navy)}
+
+/* Phase 16 audit fixes */
+.price-field input{font-weight:900;color:var(--navy);border-color:#8bb9ff!important;background:#f8fbff!important}.price-field small{display:block;margin-top:5px;color:#547099;font-weight:800;font-size:11px}.required-star{color:var(--red)}.price-missing{background:#f59e0b!important;color:#111827!important}.login-brand-text{width:112px;height:82px;margin:0 auto 10px;border-radius:22px;background:linear-gradient(135deg,#eaf3ff,#fff);border:1px solid var(--line);display:grid;place-items:center;color:var(--blue);box-shadow:var(--shadow2)}.login-brand-text b{font-size:24px;line-height:1}.login-brand-text span{font-weight:950;color:var(--navy);margin-top:-20px}.cat-btn.no-icon span{white-space:normal!important;overflow:visible!important;text-overflow:clip!important;line-height:1.2}.admin-table td .danger-text,.danger-text{color:#dc2626!important;font-weight:950}.item-card.sold .price.danger-text{color:#dc2626!important}
