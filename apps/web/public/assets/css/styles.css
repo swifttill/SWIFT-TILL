@@ -981,3 +981,25 @@ input:focus,select:focus,textarea:focus,button:focus-visible{outline:3px solid r
   .admin-filterbar{gap:8px!important;}
 }
 @media print{button,.primary-btn,.secondary-btn,.ghost-btn,.danger-btn{box-shadow:none!important;outline:0!important}}
+
+
+/* SwiftTill V52 client-facing admin cleanup */
+.v52-admin-list.no-media .admin-table th:first-child,
+.v52-admin-list.no-media .admin-table td:first-child{ text-align:left; }
+.v52-admin-list .admin-table.no-media .media-col{ display:none!important; }
+.v52-admin-list .admin-table.has-media .media-col{ width:64px; min-width:64px; max-width:76px; }
+.v52-admin-list .admin-table.no-media th,
+.v52-admin-list .admin-table.no-media td{ padding-left:14px!important; padding-right:14px!important; }
+.v52-admin-list .admin-table.no-media th:last-child,
+.v52-admin-list .admin-table.no-media td:last-child{ width:160px; min-width:150px; }
+.v52-admin-list .muted-note{ line-height:1.45; }
+.v52-admin-list .row-actions .tiny{ min-width:58px; text-align:center; justify-content:center; }
+.v52-admin-list .admin-table th{ white-space:nowrap; }
+.v52-admin-list .admin-table td{ white-space:normal; }
+.v52-admin-list .admin-table td:last-child{ white-space:nowrap; }
+@media(max-width:720px){
+  .v52-admin-list .admin-table.no-media th,
+  .v52-admin-list .admin-table.no-media td{ padding-left:10px!important; padding-right:10px!important; }
+  .v52-admin-list .admin-table.no-media th:last-child,
+  .v52-admin-list .admin-table.no-media td:last-child{ min-width:132px; }
+}

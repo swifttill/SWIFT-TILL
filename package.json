@@ -1,8 +1,8 @@
 {
   "name": "swifttill-pos-monorepo",
-  "version": "51.0.0",
+  "version": "52.0.0",
   "private": true,
-  "description": "SwiftTill POS - V51 deep clean UX and builder audit",
+  "description": "SwiftTill POS - V52 client-facing admin cleanup",
   "workspaces": [
     "apps/api",
     "apps/web",

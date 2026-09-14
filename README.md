@@ -1,3 +1,16 @@
+# SwiftTill POS V52 Client-Facing Admin Cleanup
+
+Latest version: 52.0.0-client-facing-admin-cleanup
+
+## Phase 52
+- Removed unsupported Image columns from admin modules that do not use images.
+- Tables, Order Takers, Payment Methods, Users and Roles now show only relevant columns.
+- Categories, Menu Items and Deals still support image upload because those images are used in POS menu/category/deal cards.
+- Admin column labels cleaned for client-facing use.
+- Non-media admin payloads sanitize accidental imageUrl fields on the server.
+- Search/filter focus fix from V51 is preserved.
+- Online-only mode remains preserved; offline concept remains removed.
+
 # SwiftTill POS V51 Deep Clean UX + Builder Audit
 
 Latest version: 51.0.0-deep-clean-ux-builder-audit

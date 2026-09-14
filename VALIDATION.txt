@@ -1,23 +1,18 @@
-SwiftTill POS V51 Deep Clean UX + Builder Audit
+SwiftTill V52 Client-Facing Admin Cleanup Validation
 
-Validation summary:
-- API syntax: PASS
-- DB adapter/client syntax: PASS
-- Auth package syntax: PASS
-- R2 storage syntax: PASS
-- Print agent syntax: PASS
-- Web app JavaScript parse: PASS
-- Auth smoke test: PASS
-- Package ZIP integrity: PASS
+API syntax: PASS
+DB client syntax: PASS
+DB adapter syntax: PASS
+Auth package syntax: PASS
+Storage/R2 syntax: PASS
+Print agent syntax: PASS
+Web JavaScript parse: PASS
+Auth smoke test: PASS
+ZIP integrity: PASS
 
-Main fixes:
-- Admin search/filter focus-loss bug fixed.
-- Admin filter updates table rows only; search input remains active while typing.
-- POS menu search text remains stable during refreshes.
-- Form caret/selection preservation guard added for safe re-renders.
-- Enter key in search fields no longer causes accidental blur/submit.
-- Button text visibility guard strengthened for desktop and mobile.
-- Offline concept remains removed; build is online-only.
-
-Version expected after deploy:
-51.0.0-deep-clean-ux-builder-audit
+Manual audit focus:
+- Tables admin no longer shows Image column.
+- Non-image modules show only used fields.
+- Categories/Menu Items/Deals keep Image because POS uses them visually.
+- Search/filter focus preservation from V51 remains active.
+- Offline concept remains removed; online-only mode preserved.

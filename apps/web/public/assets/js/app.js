@@ -2332,3 +2332,72 @@ document.addEventListener('keydown', function(e){
     v51RestoreFocus({selector:'#'+el.id,start:el.selectionStart,end:el.selectionEnd,scrollX:window.scrollX,scrollY:window.scrollY});
   }
 }, true);
+
+
+/* ============================================================
+   SwiftTill V52 Client-Facing Admin Cleanup
+   - remove unsupported image columns from modules that do not use media
+   - keep media only for categories/items/deals where POS actually displays it
+   - professional column labels and module-specific tables
+   - sanitize accidental non-media image fields before save
+============================================================ */
+const V52_MEDIA_ADMIN_KEYS = new Set(['categories','items','deals']);
+const V52_MEDIA_ADMIN_API = new Set(['category','item','deal']);
+function v52AdminSupportsImage(key, apiName){ return V52_MEDIA_ADMIN_KEYS.has(key) || V52_MEDIA_ADMIN_API.has(apiName); }
+function v52ColumnLabel(f){
+  return ({
+    name:'Name', categoryId:'Category', price:'Price', active:'Status', soldOut:'Sold Out',
+    sort:'Sort Order', seats:'Seats', roleIds:'Roles', email:'Email', description:'Description', permissions:'Permissions'
+  })[f] || String(f||'').replace(/([A-Z])/g,' $1').replace(/^./,c=>c.toUpperCase());
+}
+function v52AdminRowsHtml(key, apiName, fields, rows){
+  const hasImage = v52AdminSupportsImage(key, apiName);
+  const colCount = fields.length + (hasImage ? 2 : 1);
+  return rows.map(r=>`<tr>${hasImage?`<td class="media-col">${r.imageUrl?`<img class="thumb admin-thumb" src="${esc(r.imageUrl)}" alt="${esc(r.name||'Image')}">`:''}</td>`:''}${fields.map(f=>`<td>${adminCell(r,f)}</td>`).join('')}<td><div class="row-actions"><button class="ghost-btn tiny" type="button" data-admin-edit="${esc(r.id)}">Edit</button><button class="danger-btn tiny" type="button" data-admin-delete="${esc(r.id)}">Delete</button></div></td></tr>`).join('') || `<tr><td colspan="${colCount}" class="empty-td">No records match these filters.</td></tr>`;
+}
+function v52DrawAdminRows(c,key,apiName,fields){
+  const allRows = state[key] || [];
+  const rows = adminApplyRows(key, allRows);
+  const count = $('#adminListCount', c);
+  if(count) count.textContent = `${rows.length} ${labelTab(key).toLowerCase()} shown from ${allRows.length}.`;
+  const tbody = $('#adminListRows', c);
+  if(tbody) tbody.innerHTML = v52AdminRowsHtml(key, apiName, fields, rows);
+  v51BindAdminRowActions(c,key,apiName);
+}
+function v52AdminHelperText(key, apiName){
+  const media = v52AdminSupportsImage(key, apiName) ? 'Image upload is available because this module is shown visually in POS.' : 'Only fields used by this module are shown.';
+  return `${media} Filters update without losing focus.`;
+}
+adminList = function(c,key,apiName,fields){
+  const allRows=state[key]||[];
+  const rows=adminApplyRows(key, allRows);
+  const hasImage = v52AdminSupportsImage(key, apiName);
+  c.innerHTML=`<div class="admin-wrap v30-admin-list v51-admin-list v52-admin-list ${hasImage?'has-media':'no-media'}"><div class="module-title"><div><h3>${esc(labelTab(key))}</h3><p class="muted-note" id="adminListCount">${rows.length} ${esc(labelTab(key).toLowerCase())} shown from ${allRows.length}. ${esc(v52AdminHelperText(key, apiName))}</p></div><button class="primary-btn" type="button" onclick="openAdminEditor('${apiName}')">Add New</button></div>${adminListControls(key)}<div class="report-table-wrap admin-table-shell"><table class="admin-table admin-table-${esc(key)} ${hasImage?'has-media':'no-media'}"><thead><tr>${hasImage?'<th class="media-col">Image</th>':''}${fields.map(f=>`<th>${esc(v52ColumnLabel(f))}</th>`).join('')}<th>Action</th></tr></thead><tbody id="adminListRows">${v52AdminRowsHtml(key, apiName, fields, rows)}</tbody></table></div></div>`;
+  const f=adminListFilters(key);
+  const search = $('#adminSearchFilter', c);
+  if(search){
+    search.setAttribute('autocomplete','off');
+    search.setAttribute('spellcheck','false');
+    search.addEventListener('input', e=>{
+      f.search = e.target.value;
+      const cap={selector:'#adminSearchFilter',start:e.target.selectionStart,end:e.target.selectionEnd,scrollX:window.scrollX,scrollY:window.scrollY};
+      v52DrawAdminRows(c,key,apiName,fields);
+      v51RestoreFocus(cap);
+    });
+  }
+  $('#adminCategoryFilter', c)?.addEventListener('change', e=>{ f.category=e.target.value; v52DrawAdminRows(c,key,apiName,fields); });
+  $('#adminActiveFilter', c)?.addEventListener('change', e=>{ f.active=e.target.value; v52DrawAdminRows(c,key,apiName,fields); });
+  $('#adminSortFilter', c)?.addEventListener('change', e=>{ f.sort=e.target.value; v52DrawAdminRows(c,key,apiName,fields); });
+  v51BindAdminRowActions(c,key,apiName);
+};
+
+const __v52BaseOpenAdminEditor = openAdminEditor;
+openAdminEditor = function(kind, record={}){
+  if(!V52_MEDIA_ADMIN_API.has(kind) && record && typeof record === 'object' && 'imageUrl' in record){
+    record = {...record};
+    delete record.imageUrl;
+  }
+  return __v52BaseOpenAdminEditor(kind, record);
+};
+
+document.documentElement.classList.add('v52-admin-cleanup');
