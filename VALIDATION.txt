@@ -1,17 +1,20 @@
-SwiftTill POS V45 Rollback Online Printer Stable
+SwiftTill POS V46 — Day Open/Close + Report Cleanup Validation
 
-Source base: V40 printer module stable package
-Offline V41-V44 modules: REMOVED / not included
-Online-only mode: ACTIVE
-V39 discount/payment guards: PRESERVED
-V40 printer module: PRESERVED
-Client print-agent package: INCLUDED
+API syntax: PASS
+Web app JS syntax: PASS
+DB client syntax: PASS
+DB adapter syntax: PASS
+Auth package syntax: PASS
+R2/storage syntax: PASS
+Print agent syntax: PASS
 
-Validation performed:
-- API syntax check PASS
-- Web app JavaScript syntax PASS
-- Auth package syntax PASS
-- DB adapter/client syntax PASS
-- R2/storage syntax PASS
-- Print agent syntax PASS
-- ZIP integrity PASS
+Included fixes:
+- Online-only mode preserved; offline concept removed/forgotten.
+- Open Day required before billing.
+- One active business day at a time.
+- Orders tagged by business day for after-midnight sale grouping.
+- Close Day blocked while open/held bills exist.
+- Cash closeout expected/count/difference preserved.
+- Reports use business day open-close window where selected.
+- Detailed bill rows restricted to detailed/custom reports.
+- A4/PDF and thermal print templates compacted to reduce extra page waste.

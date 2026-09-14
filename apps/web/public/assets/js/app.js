@@ -1597,5 +1597,215 @@ openPayModal = async function(){
 };
 
 
+/* ============================================================
+   SwiftTill V46 Business Day Open/Close + compact reports
+   Offline concept removed. Billing requires Open Day.
+============================================================ */
+function v46TodayKey(){ const d=new Date(); d.setMinutes(d.getMinutes()-d.getTimezoneOffset()); return d.toISOString().slice(0,10); }
+function v46Day(){ return state?.activeShift || state?.businessDay?.activeDay || null; }
+function v46DayLabel(day=v46Day()){
+  if(!day) return 'No Day Open';
+  return `Day #${day.number || ''} • ${day.businessDate || (day.openedAt?new Date(day.openedAt).toLocaleDateString('en-CA'):'')} • ${day.status || 'OPEN'}`;
+}
+function v46RequireDay(){ if(v46Day()) return true; toast('Open Day first. Billing is locked until day is opened.', true); return false; }
+const __v46BaseSetupBanner = setupBanner;
+setupBanner = function(){
+  const old = __v46BaseSetupBanner ? __v46BaseSetupBanner() : '';
+  if(v46Day()) return old;
+  return old + `<div class="setup-banner day-lock-banner"><div><b>Day is not open</b><p>Open Day is required before New Order, Hold, Payment and sales reports. This keeps after-midnight restaurant sale in the correct business day.</p></div><button class="primary-btn" onclick="openOpenShift()">Open Day</button></div>`;
+};
+renderTopbar = function(){
+  const d = new Date(); const active = v46Day(); const s = state.settings || {};
+  const logo = s.logoUrl ? `<img class="topbar-company-logo" src="${esc(s.logoUrl)}" alt="${esc(s.businessName || 'Company Logo')}">` : `<span class="topbar-company-logo text-logo">ST</span>`;
+  const back = screen === 'admin' ? `<button class="ghost-btn top-action back-pos-action" id="backPosBtn">← Back to POS</button>` : '';
+  return `<div class="hello v30-hello"><div class="topbar-brand-wrap">${logo}<div><h2>${esc(s.businessName || 'SwiftTill POS')}</h2><p>${screen==='admin'?'Back office, reports and day close.':(active?'Billing allowed for active business day.':'Open Day before billing.')}</p></div></div></div>
+  <div class="top-items">
+    <div class="top-pill date-pill">📅 <span><b>${d.toLocaleDateString('en-GB',{weekday:'short',day:'2-digit',month:'short',year:'numeric'})}</b>${d.toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})}</span></div>
+    <div class="top-pill user-pill">👤 <span><b>${esc(state.user.name)}</b>${esc(state.user.roles.join(', ') || 'User')}</span></div>
+    <div class="top-pill branch-pill ${active?'day-open':'day-closed'}"><span class="status-dot"></span><span><b>${esc(s.branchName || 'Main Branch')}</b>${esc(v46DayLabel(active))}</span></div>
+    ${back}
+    <button class="ghost-btn shift-action ${active?'close-day-btn':'open-day-btn'}" id="shiftBtn">${active?'Close Day':'Open Day'}</button>
+    <button class="ghost-btn logout-action" id="logoutBtn">Logout</button>
+  </div>`;
+};
+renderSidebar = function(){
+  const logo = state?.settings?.logoUrl || '';
+  const brand = logo ? `<img src="${esc(logo)}" alt="${esc(state?.settings?.businessName || 'SwiftTill POS')}">` : `<div class="brand-text"><b>SwiftTill</b><span>POS</span></div>`;
+  const locked = !v46Day();
+  return `<div class="brand">${brand}</div>
+  <button class="new-order ${locked?'locked':''}" id="newOrderBtn" ${locked?'disabled title="Open Day first"':''}>＋ New Order</button>
+  <div class="search"><span>⌕</span><input id="menuSearch" placeholder="Search menu items..." ${locked?'disabled':''}></div>
+  <div class="sidebar-scroll">
+    <div class="section-title"><h3>Categories</h3><button id="showAll">View All</button></div>
+    <button class="cat-btn ${categoryId==='all'?'active':''}" data-cat="all"><span>All Items</span></button>
+    ${state.categories.filter(c=>c.active).sort((a,b)=>(a.sort||0)-(b.sort||0)).map(c=>`<button class="cat-btn ${categoryTone(c.name)} ${categoryId===c.id?'active':''}" data-cat="${esc(c.id)}">${c.imageUrl?`<img src="${esc(c.imageUrl)}" alt="">`:''}<span>${esc(c.name)}</span></button>`).join('')}
+    <div class="divider"></div>
+    <div class="section-title"><h3>Deals</h3></div>
+    <button class="cat-btn no-icon ${centerMode==='deals'?'active':''}" id="dealsBtn"><span>Special Deals</span></button>
+    <button class="cat-btn no-icon" id="comboBtn"><span>Meal Combos</span></button>
+  </div>`;
+};
+bindSidebar = function(){
+  const newBtn=$('#newOrderBtn'); if(newBtn) newBtn.onclick = () => v46RequireDay() && openNewOrderModal();
+  $$('[data-cat]').forEach(b => b.onclick = () => { setMobileBill(false); screen='pos'; centerMode='menu'; categoryId=b.dataset.cat; renderShell(); });
+  $('#dealsBtn') && ($('#dealsBtn').onclick = () => { screen='pos'; centerMode='deals'; renderShell(); });
+  $('#comboBtn') && ($('#comboBtn').onclick = () => { screen='pos'; centerMode='deals'; renderShell(); });
+  $('#showAll') && ($('#showAll').onclick = () => { setMobileBill(false); categoryId='all'; centerMode='menu'; screen='pos'; renderShell(); });
+  const search=$('#menuSearch'); if(search) search.oninput = e => { screen='pos'; centerMode='menu'; renderMenu(e.target.value); };
+  $('#logoutBtn') && ($('#logoutBtn').onclick = logout);
+  $('#shiftBtn') && ($('#shiftBtn').onclick = () => v46Day() ? openCloseShift() : openOpenShift());
+};
+const __v46BaseRenderWorkspace = renderWorkspace;
+renderWorkspace = function(){
+  if(!v46Day() && !currentOrder){
+    const ws=$('#workspace');
+    if(ws){
+      ws.innerHTML = `<div class="day-lock-panel card subcard"><div class="lock-icon">🔒</div><h2>Open Day Required</h2><p>Restaurant billing cannot start until Day is opened. Sales will be grouped from Open Day time to Close Day time, even if restaurant closes after 12 AM.</p><button class="primary-btn" onclick="openOpenShift()">Open Day Now</button><button class="ghost-btn" onclick="screen='admin';adminTab='reports';renderShell()">View Reports</button></div>`;
+    }
+    return;
+  }
+  return __v46BaseRenderWorkspace();
+};
+async function ensureOrder(){ if(currentOrder) return true; if(!v46RequireDay()) return false; openNewOrderModal(); return false; }
+openOpenShift = function(){
+  const today = v46TodayKey();
+  openModal(`<div class="modal-head"><h2>Open Day</h2><button class="x" onclick="closeModal()">×</button></div>
+  <p class="muted-note">Open Day se hi sale start hogi. Agar restaurant 12 AM ke baad close ho, sale isi Business Date mein count hogi.</p>
+  <div class="grid2"><div class="field"><label>Business Date</label><input id="businessDate" type="date" value="${today}"></div><div class="field"><label>Opening Cash</label><input id="openingCash" type="number" value="0" min="0"></div></div>
+  <div class="field"><label>Opening Note</label><input id="dayNote" placeholder="Optional"></div>
+  <button class="primary-btn" style="width:100%" id="doOpenShift">Open Day & Start Billing</button>`);
+  $('#doOpenShift').onclick=async()=>{try{await api('/api/day/open',{businessDate:$('#businessDate').value,openingCash:Number($('#openingCash').value||0),note:$('#dayNote').value||''});closeModal();await loadState();renderShell();toast('Day opened. Billing unlocked.');}catch(e){toast(e.message,true);}};
+};
+openCloseShift = function(){
+  const d=v46Day();
+  const openCount=state?.openOrders?.length||0;
+  openModal(`<div class="modal-head"><h2>Close Day</h2><button class="x" onclick="closeModal()">×</button></div>
+  <p class="muted-note">${esc(v46DayLabel(d))}. Day close lazmi hai. Open bills close/pay/void karna zaroori hai.</p>
+  ${openCount?`<div class="empty-cart error-state"><b>${openCount} open bill(s)</b><p>Day close se pehle tamam open bills clear karo.</p></div>`:''}
+  <div class="field"><label>Counted Cash</label><input id="countedCash" type="number" value="0" min="0"></div>
+  <button class="primary-btn" style="width:100%" id="doCloseShift" ${openCount?'disabled':''}>Close Day</button>`);
+  const btn=$('#doCloseShift'); if(btn) btn.onclick=async()=>{try{const j=await api('/api/day/close',{countedCash:Number($('#countedCash').value||0)});closeModal();await loadState();renderShell();toast(`Day closed. Difference ${money(j.shift.difference)}`);}catch(e){toast(e.message,true);}};
+};
+addItem = async function(itemId){
+  if(!v46RequireDay()) return;
+  if(!requireNotRapidClick()) return;
+  const i=state.items.find(x=>x.id===itemId);
+  if(!i||i.soldOut) return;
+  if(numericPrice(i.price)<=0) return toast('Set item price in Admin before billing', true);
+  if(!(await ensureOrder())) return;
+  const line=currentOrder.lines.find(l=>l.kind==='ITEM'&&l.itemId===i.id&&(!l.modifiers||!l.modifiers.length)&&!l.note);
+  if(line) line.qty++; else currentOrder.lines.push({lineId:uid(),kind:'ITEM',itemId:i.id,categoryId:i.categoryId,name:i.name,price:i.price,imageUrl:i.imageUrl,qty:1,note:'',modifiers:[]});
+  renderBill(); markCartDirty?.(); const fab=$('#mobileCartFab b'); if(fab) fab.textContent=mobileCartSummary(); toast(line ? `${i.name} quantity updated` : `${i.name} added`);
+};
+addDeal = async function(dealId){
+  if(!v46RequireDay()) return;
+  if(!requireNotRapidClick()) return;
+  const d=state.deals.find(x=>x.id===dealId);
+  if(!d) return;
+  if(numericPrice(d.price)<=0) return toast('Set deal price in Admin before billing', true);
+  if(!(await ensureOrder())) return;
+  const line=currentOrder.lines.find(l=>l.kind==='DEAL'&&l.dealId===d.id&&!l.note);
+  if(line) line.qty++; else currentOrder.lines.push({lineId:uid(),kind:'DEAL',dealId:d.id,categoryId:'cat_deals',name:d.name,price:d.price,imageUrl:d.imageUrl,qty:1,note:'',modifiers:[],dealItems:d.items});
+  renderBill(); markCartDirty?.(); const fab=$('#mobileCartFab b'); if(fab) fab.textContent=mobileCartSummary(); toast(line ? `${d.name} quantity updated` : `${d.name} added`);
+};
+const __v46BaseSaveOrder = saveOrder;
+saveOrder = async function(hold=false){ if(!v46RequireDay()) return; return __v46BaseSaveOrder(hold); };
+const __v46BaseOpenPayModal = openPayModal;
+openPayModal = async function(){ if(!v46RequireDay()) return; return __v46BaseOpenPayModal(); };
+function currentReportTitle(){
+  return ({daily:'Day Sales Summary',itemwise:'Item Sales',category:'Category Sales',payment:'Payment Summary',custom:'Detailed Bill Report',x:'X Report - Open Day',y:'Period Sales Summary',z:'Z Report - Closed Day',discount:'Discounts',voidrefund:'Void / Refund',ordertype:'Order Type Sales'}[reportType] || 'Sales Report');
+}
+function reportDateDefaults(kind){
+  const day=v46Day() || state?.businessDay?.lastClosed;
+  const today=v46TodayKey();
+  if((kind==='daily'||kind==='x'||kind==='z') && day?.businessDate) return {from:day.businessDate,to:day.businessDate,shiftId:day.id};
+  if(kind==='y'){ const d=new Date(); const y=new Date(d.getFullYear(),0,1); y.setMinutes(y.getMinutes()-y.getTimezoneOffset()); return {from:y.toISOString().slice(0,10),to:today,shiftId:''}; }
+  const d=new Date(); d.setDate(d.getDate()-30); d.setMinutes(d.getMinutes()-d.getTimezoneOffset()); return {from:d.toISOString().slice(0,10),to:today,shiftId:''};
+}
+function v46ShiftOptions(selected=''){
+  return (state.shifts||[]).map(s=>`<option value="${esc(s.id)}" ${selected===s.id?'selected':''}>Day #${esc(s.number)} · ${esc(s.businessDate || '')} · ${esc(s.status || '')}${s.closedAt?' · closed':''}</option>`).join('');
+}
+function reportQuery(){
+  const params = new URLSearchParams(); params.set('type', reportType);
+  const shift=$('#shiftId')?.value||''; if(shift) params.set('shiftId', shift);
+  const map = {from:'fromDate',to:'toDate',paymentMode:'paymentMode',orderType:'orderType',itemId:'itemId',categoryId:'categoryFilter',cashierId:'cashierId',orderTakerId:'orderTakerId'};
+  for(const [k,id] of Object.entries(map)){ const el=$('#'+id); if(el && el.value) params.set(k,el.value); }
+  if($('#discountOnly')?.checked) params.set('discountOnly','1'); if($('#refundOnly')?.checked) params.set('refundOnly','1'); return params.toString();
+}
+function updateReportFilterVisibility(){ return applyReportFilterVisibility(); }
+function applyReportFilterVisibility(){
+  const visible={daily:['businessday','payment','ordertype','cashier','taker'],itemwise:['businessday','date','item','category','cashier','taker'],category:['businessday','date','category','cashier'],payment:['businessday','date','payment','cashier'],custom:['businessday','date','payment','ordertype','item','category','cashier','taker','discount','refund'],x:['businessday','cashier'],y:['date','payment','ordertype','cashier'],z:['businessday','cashier'],discount:['businessday','date','cashier','taker','discount'],voidrefund:['businessday','date','cashier','refund'],ordertype:['businessday','date','ordertype','cashier','taker']}[reportType]||['date'];
+  $$('.report-filter').forEach(el=>{ el.style.display = visible.some(v=>el.classList.contains(v+'-filter')) ? '' : 'none'; });
+  if(reportType==='discount' && $('#discountOnly')) $('#discountOnly').checked=true; if(reportType==='voidrefund' && $('#refundOnly')) $('#refundOnly').checked=true;
+}
+function renderReports(ws){
+  try{
+    const defs=reportDateDefaults(reportType);
+    const paymentOptions=(state.paymentMethods||[]).filter(p=>p.active!==false).map(p=>`<option value="${esc(p.name)}">${esc(p.name)}</option>`).join('');
+    const itemOptions=[...(state.items||[]).map(i=>`<option value="${esc(i.id)}">${esc(i.name)}</option>`),...(state.deals||[]).map(d=>`<option value="${esc(d.id)}">Deal: ${esc(d.name)}</option>`)].join('');
+    const catOptions=(state.categories||[]).filter(c=>c.id!=='cat_all'&&c.id!=='all').map(c=>`<option value="${esc(c.id)}">${esc(c.name)}</option>`).join('');
+    const userOptions=(state.users||[]).map(u=>`<option value="${esc(u.id)}">${esc(u.name)}</option>`).join('');
+    const takerOptions=(state.orderTakers||[]).map(t=>`<option value="${esc(t.id)}">${esc(t.name)}</option>`).join('');
+    ws.innerHTML=`<div class="report-page admin-report-shell pro-report-screen qb-report-module v46-report-page">
+      <div class="module-title v34-report-title"><div><h3>${esc(currentReportTitle())}</h3><p class="muted-note">Reports ab business day open-close par based hain. A4/Thermal print compact rakha gaya hai taa-ke extra pages waste na hon.</p></div><div class="actions-mini"><button class="ghost-btn" id="exportReport" disabled>Export CSV</button><button class="ghost-btn" id="printReportPdfBtn" disabled>A4 / PDF</button><button class="primary-btn" id="printReportThermalBtn" disabled>Thermal</button></div></div>
+      <div class="report-work card subcard v34-report-work">
+        <div class="report-headline branded-report-headline"><div class="brand-report-name">${v34OrgLogoImg('report-org-logo screen-logo')}<div><h3 id="reportTitle">${esc(currentReportTitle())}</h3><span>${esc(v46DayLabel())}</span></div></div></div>
+        <div class="report-filter-grid compact-filters v46-report-filters" id="reportFilters">
+          <div class="field report-filter businessday-filter"><label>Business Day</label><select id="shiftId"><option value="">All / Date Range</option>${v46ShiftOptions(defs.shiftId||'')}</select></div>
+          <div class="field report-filter date-filter"><label>From</label><input type="date" id="fromDate" value="${defs.from}"></div>
+          <div class="field report-filter date-filter"><label>To</label><input type="date" id="toDate" value="${defs.to}"></div>
+          <div class="field report-filter payment-filter"><label>Payment</label><select id="paymentMode"><option value="">All</option>${paymentOptions}</select></div>
+          <div class="field report-filter ordertype-filter"><label>Order Type</label><select id="orderType"><option value="">All</option><option value="DINE_IN">Dine In</option><option value="DELIVERY">Delivery</option><option value="TAKEAWAY">Takeaway</option></select></div>
+          <div class="field report-filter item-filter"><label>Item / Deal</label><select id="itemId"><option value="">All</option>${itemOptions}</select></div>
+          <div class="field report-filter category-filter"><label>Category</label><select id="categoryFilter"><option value="">All</option>${catOptions}</select></div>
+          <div class="field report-filter cashier-filter"><label>Cashier</label><select id="cashierId"><option value="">All</option>${userOptions}</select></div>
+          <div class="field report-filter taker-filter"><label>Order Taker</label><select id="orderTakerId"><option value="">All</option>${takerOptions}</select></div>
+          <label class="check report-filter discount-filter"><input type="checkbox" id="discountOnly"> Discounted only</label>
+          <label class="check report-filter refund-filter"><input type="checkbox" id="refundOnly"> Refunded only</label>
+          <button class="primary-btn" id="runReport">Run</button>
+        </div>
+        <div id="reportResult" class="mt"><div class="empty-cart compact-empty"><b>Select report.</b><p>Run report to show clean summary, relevant details, A4/PDF and thermal print.</p></div></div>
+      </div></div>`;
+    updateReportFilterVisibility();
+    $('#runReport').onclick=runReport; $('#printReportPdfBtn').onclick=()=>printReportHtml('a4'); $('#printReportThermalBtn').onclick=()=>printReportHtml('thermal'); $('#exportReport').onclick=()=>downloadApi(`/api/export?${reportQuery()}`,`swifttill-${reportType}-report-${Date.now()}.csv`).catch(e=>toast(e.message,true));
+  }catch(e){ ws.innerHTML=`<div class="card subcard error-state"><h3>Reports failed to render</h3><p>${esc(e.message)}</p><button class="primary-btn" onclick="renderAdminContent()">Reload Reports</button></div>`; }
+}
+function v46ReportRangeText(r){ const bd=r.businessDay||r.shiftSummary||{}; return bd.shiftId||bd.id ? `Business Day ${bd.businessDate||''} · ${bd.openedAt?new Date(bd.openedAt).toLocaleString():''} to ${bd.closedAt?new Date(bd.closedAt).toLocaleString():'Open'}` : reportRangeText(r); }
+function v46SummaryBlock(r){ const s=r.summary||{}, sh=r.shiftSummary||{}; return `<div class="qb-two-col v46-summary"><div>${reportTable(['Sales','Amount'],[['Gross',reportMoney(s.gross)],['Discount',reportMoney(s.discounts)],['Refund',reportMoney(s.refunds)],['Net Sales',reportMoney(s.net)],['Orders',s.orders||0],['Average Bill',reportMoney(s.averageBill)]])}</div><div>${reportTable(['Cash Drawer','Amount'],[['Day',sh.shiftNumber?`#${sh.shiftNumber} ${sh.businessDate||''}`:'—'],['Opening Cash',reportMoney(sh.openingCash)],['Cash Sales',reportMoney(sh.cashSales)],['Cash Refunds',reportMoney(sh.cashRefunds)],['Expected Cash',reportMoney(sh.expectedCash)],['Counted Cash',sh.countedCash==null?'Not closed':reportMoney(sh.countedCash)],['Difference',sh.difference==null?'Not closed':reportMoney(sh.difference)]])}</div></div>`; }
+function buildA4ReportHtml(r){
+  const title=currentReportTitle(); const s=r.summary||{}; let details='';
+  if(reportType==='itemwise'){ const rows=reportItemRows(r); details=reportTable(['Item','Category','Qty','Net'],rows.map(x=>[x[0],x[1],x[2],x[5]]),['TOTAL','',sumReport(rows,2),reportMoney(sumReport(rows,5))]); }
+  else if(reportType==='category'){ const rows=reportCategoryRows(r); details=reportTable(['Category','Qty','Net'],rows.map(x=>[x[0],x[1],x[3]]),['TOTAL',sumReport(rows,1),reportMoney(sumReport(rows,3))]); }
+  else if(reportType==='payment'){ const rows=reportPaymentRows(r); details=reportTable(['Payment','Trx','Received','Change','Revenue'],rows,['TOTAL',sumReport(rows,1),reportMoney(sumReport(rows,2)),reportMoney(sumReport(rows,3)),reportMoney(sumReport(rows,4))]); }
+  else if(reportType==='discount'){ const rows=reportDiscountRows(r); details=reportTable(['Bill','Date','Type','Discount','Total'],rows.map(x=>[x[0],x[1],x[2],x[6],x[7]]),['TOTAL','','',reportMoney(sumReport(rows,6)),reportMoney(sumReport(rows,7))]); }
+  else if(reportType==='voidrefund'){ const rows=reportRefundRows(r); details=reportTable(['Type','Bill','Date','Amount','Reason'],rows.map(x=>[x[0],x[1],x[2],x[4],x[5]]),['TOTAL','','',reportMoney(sumReport(rows,4)),'']); }
+  else if(reportType==='ordertype'){ const rows=reportOrderTypeRows(r); details=reportTable(['Order Type','Orders','Gross','Discount','Net'],rows.map(x=>[x[0],x[1],x[3],x[4],x[5]]),['TOTAL',sumReport(rows,1),reportMoney(sumReport(rows,3)),reportMoney(sumReport(rows,4)),reportMoney(sumReport(rows,5))]); }
+  else if(reportType==='custom'){ details=reportTable(['Bill','Date','Type','Table','Cashier','Subtotal','Disc.','Delivery','Total','Payments'], reportBillRows(r).map(x=>[x[0],x[1],x[2],x[3],x[6],x[7],x[8],x[9],x[10],x[11]]), ['TOTAL','','','','',reportMoney(sumRows(r.orders||[],'subtotal')),reportMoney(sumRows(r.orders||[],'discount')),reportMoney(sumRows(r.orders||[],'deliveryFee')),reportMoney(sumRows(r.orders||[],'total')),'']); }
+  else { const pay=reportPaymentRows(r); const cat=reportCategoryRows(r).slice(0,12); details=reportTable(['Payment','Trx','Revenue'],pay.map(x=>[x[0],x[1],x[4]]),['TOTAL',sumReport(pay,1),reportMoney(sumReport(pay,4))]) + reportTable(['Category','Qty','Net'],cat.map(x=>[x[0],x[1],x[3]]),['TOTAL',sumReport(cat,1),reportMoney(sumReport(cat,3))]); }
+  const closeSign = (reportType==='z'||reportType==='x') ? `<div class="qb-signatures v46-signatures"><span>Cashier</span><span>Manager</span></div>` : '';
+  return `<div class="report-a4 qb-a4 v46-a4"><div class="qb-head"><div><h1>${esc(reportStoreName())}</h1><p>${esc(reportBranchLine())}</p></div><div><b>${esc(title)}</b><span>${esc(v46ReportRangeText(r))}</span><span>Printed: ${esc(new Date().toLocaleString())}</span></div></div><div class="qb-title-row"><h2>${esc(title)}</h2><b>Net ${esc(reportMoney(s.net))}</b></div>${v46SummaryBlock(r)}<h3 class="qb-section-title">${reportType==='custom'?'Bill Details':'Relevant Details'}</h3>${details}${closeSign}<p class="qb-footer">${esc(state?.settings?.reportFooter || 'Generated by SwiftTill POS')}</p></div>`;
+}
+function buildThermalReportHtml(r){
+  const s=r.summary||{}, sh=r.shiftSummary||{}; const title=currentReportTitle();
+  let body=`<div class="thermal-report v46-thermal"><div class="tr-center"><b>${esc(reportStoreName())}</b><br>${esc(state?.settings?.branchName||'')}</div><div class="tr-sep"></div>${thermalLine('REPORT',title)}${thermalLine('DAY',sh.businessDate||'')}${thermalLine('OPEN',sh.openedAt?new Date(sh.openedAt).toLocaleString():'')}${thermalLine('CLOSE',sh.closedAt?new Date(sh.closedAt).toLocaleString():'Open')}<div class="tr-sep"></div><div class="tr-title">SUMMARY</div>${thermalLine('Gross',reportMoney(s.gross))}${thermalLine('Discount',reportMoney(s.discounts))}${thermalLine('Refund',reportMoney(s.refunds))}${thermalLine('NET',reportMoney(s.net))}${thermalLine('Orders',s.orders||0)}`;
+  if(['daily','payment','x','z','custom'].includes(reportType)) body+=`<div class="tr-sep"></div><div class="tr-title">CASH</div>${thermalLine('Opening',reportMoney(sh.openingCash))}${thermalLine('Cash Sales',reportMoney(sh.cashSales))}${thermalLine('Cash Refund',reportMoney(sh.cashRefunds))}${thermalLine('Expected',reportMoney(sh.expectedCash))}${thermalLine('Counted',sh.countedCash==null?'Not closed':reportMoney(sh.countedCash))}${thermalLine('Diff.',sh.difference==null?'Not closed':reportMoney(sh.difference))}`;
+  if(reportType==='itemwise') body+=`<div class="tr-sep"></div>`+thermalTableBlock('ITEM SALES',(r.itemWise||[]).slice(0,25).map(i=>[i.item,`x${i.qty}`,reportMoney(i.net)]),3);
+  else if(reportType==='category') body+=`<div class="tr-sep"></div>`+thermalTableBlock('CATEGORY',(r.categoryDetails||[]).slice(0,20).map(c=>[c.category,`x${c.qty}`,reportMoney(c.net)]),3);
+  else if(reportType==='ordertype') body+=`<div class="tr-sep"></div>`+thermalTableBlock('ORDER TYPE',(r.orderTypeDetails||[]).map(o=>[formatType(o.type),`${o.orders} bills`,reportMoney(o.net)]),3);
+  else if(reportType==='discount') body+=`<div class="tr-sep"></div>`+thermalTableBlock('DISCOUNT',(r.discountWise?.rows||[]).slice(0,25).map(o=>[`#${o.number}`,formatType(o.type),reportMoney(o.discount)]),3);
+  else if(reportType==='voidrefund') body+=`<div class="tr-sep"></div>`+thermalTableBlock('VOID/REFUND',reportRefundRows(r).slice(0,25).map(x=>[`${x[0]} #${x[1]}`,x[5],x[4]]),3);
+  else body+=`<div class="tr-sep"></div>`+thermalTableBlock('PAYMENTS',reportPaymentRows(r).map(p=>[p[0],`${p[1]} trx`,p[4]]),3);
+  body+=`<div class="tr-sep"></div><div class="tr-center small">${esc(state?.settings?.reportFooter || 'Generated by SwiftTill POS')}</div></div>`; return body;
+}
+async function runReport(){
+  const target=$('#reportResult'); if(target) target.innerHTML='<div class="report-loading"><b>Generating report...</b><span>Using business day open-close rules.</span></div>';
+  $('#exportReport')?.setAttribute('disabled','disabled'); $('#printReportPdfBtn')?.setAttribute('disabled','disabled'); $('#printReportThermalBtn')?.setAttribute('disabled','disabled');
+  try{ const j=await api(`/api/reports?${reportQuery()}`,null,'GET'); const r=j.data; window.swiftLastReport=r; if(!$('#reportResult')) return; $('#reportResult').innerHTML=`<div class="qb-report-screen v46-report-screen">${reportScreenSummary(r)}${buildA4ReportHtml(r)}</div>`; $('#exportReport')?.removeAttribute('disabled'); $('#printReportPdfBtn')?.removeAttribute('disabled'); $('#printReportThermalBtn')?.removeAttribute('disabled'); }
+  catch(e){ if(target) target.innerHTML=`<div class="empty-cart error-state"><b>Report failed</b><p>${esc(e.message)}</p></div>`; toast(e.message,true); }
+}
+async function printReportHtml(mode='thermal'){
+  const r=window.swiftLastReport; if(!r) return toast('Run report first.', true); const thermal=mode==='thermal'; const html=thermal?buildThermalReportHtml(r):buildA4ReportHtml(r); const area=ensurePrintArea(); area.className=`print-only ${thermal?'print-thermal v46-print-thermal':'print-a4 v46-print-a4'}`; area.innerHTML=html; if(thermal && state?.printAgent?.cloudQueueConfigured){ try{ const queued=await api('/api/print-jobs',{type:'report',html,text:thermalReportText(r)}); if(queued?.queued){ toast('Thermal report sent to cloud print queue'); return; } }catch(e){ toast('Cloud report queue failed; browser print opened', true); } } setTimeout(()=>window.print(),100);
+}
+
 
 boot();

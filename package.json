@@ -1,8 +1,8 @@
 {
   "name": "swifttill-pos-monorepo",
-  "version": "45.0.0",
+  "version": "46.0.0",
   "private": true,
-  "description": "SwiftTill POS V45: rollback to stable online-only printer build; offline modules removed.",
+  "description": "SwiftTill POS V46: online-only business day open/close, after-midnight sales grouping, compact reports and print cleanup.",
   "workspaces": [
     "apps/api",
     "apps/web",

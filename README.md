@@ -1,3 +1,7 @@
+# SwiftTill POS V46
+
+Online-only stable POS with Business Day Open/Close, after-midnight sales grouping, compact reports and reduced print waste. Offline concept is removed/forgotten.
+
 # SwiftTill POS V45 — Offline Rollback / Stable Online Printer Build
 
 This package rolls the app back to the stable pre-offline architecture. V41/V42/V43/V44 offline-first modules, offline authentication cache, local offline queues, counter-agent disk sync, manual offline sync center, and offline billing mode are removed from the active build.
