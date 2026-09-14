@@ -1598,4 +1598,864 @@ openPayModal = async function(){
 
 
 
+
+/* ============================================================
+   SwiftTill V41 Single Counter Offline Mode + Manual Sync Center
+   Safety model:
+   - offline use is allowed only on one registered desktop/counter device
+   - every local change is written immediately to two local WAL copies
+   - paid/offline orders stay pending until the server confirms upload
+   - automatic sync runs when internet returns; manual Sync Now is available
+   - cash-only offline payment guard keeps reports/cash drawer safe
+============================================================ */
+const V41_OFFLINE = {
+  deviceKey: 'swifttill_offline_device_id_v41',
+  enabledKey: 'swifttill_offline_registered_counter_v41',
+  cacheKey: 'swifttill_offline_state_cache_v41',
+  ordersKey: 'swifttill_offline_orders_v41',
+  backupOrdersKey: 'swifttill_offline_orders_backup_v41',
+  walKey: 'swifttill_offline_wal_v41',
+  metaKey: 'swifttill_offline_meta_v41',
+  lastBackupAt: 0,
+  syncTimer: null,
+  syncing: false,
+  progress: { active:false, done:0, total:0, message:'' }
+};
+function safeJsonParseV41(text, fallback){ try{return text?JSON.parse(text):fallback;}catch{return fallback;} }
+function offlineDeviceId(){
+  let id = localStorage.getItem(V41_OFFLINE.deviceKey);
+  if(!id){ id = 'counter-' + Date.now().toString(36) + '-' + Math.random().toString(16).slice(2,8); localStorage.setItem(V41_OFFLINE.deviceKey, id); }
+  return id;
+}
+function isTouchMobileDeviceV41(){ return /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent) || isMobileViewport(); }
+function isRegisteredCounterV41(){ return localStorage.getItem(V41_OFFLINE.enabledKey)==='1' && !isTouchMobileDeviceV41(); }
+function ensureCounterRegisteredV41(){ if(!isTouchMobileDeviceV41() && localStorage.getItem(V41_OFFLINE.enabledKey)!=='1') localStorage.setItem(V41_OFFLINE.enabledKey,'1'); return isRegisteredCounterV41(); }
+function localOrdersV41(){
+  const main = safeJsonParseV41(localStorage.getItem(V41_OFFLINE.ordersKey), null);
+  if(main && typeof main==='object') return main;
+  const bak = safeJsonParseV41(localStorage.getItem(V41_OFFLINE.backupOrdersKey), {});
+  return bak && typeof bak==='object' ? bak : {};
+}
+function saveLocalOrdersV41(orders, reason='save'){
+  const stamp = new Date().toISOString();
+  const payload = JSON.stringify(orders || {});
+  const wal = { at: stamp, reason, deviceId: offlineDeviceId(), orderCount: Object.keys(orders||{}).length, checksum: String(payload.length)+':'+String([...payload].reduce((a,c)=>(a+c.charCodeAt(0))%1000000007,0)) };
+  try{
+    localStorage.setItem(V41_OFFLINE.walKey, JSON.stringify(wal));
+    localStorage.setItem(V41_OFFLINE.backupOrdersKey, payload);
+    localStorage.setItem(V41_OFFLINE.ordersKey, payload);
+    localStorage.setItem(V41_OFFLINE.metaKey, JSON.stringify({ ...wal, lastPersistOk:true }));
+    scheduleAgentBackupV41(orders, reason);
+  }catch(e){
+    console.error('SwiftTill local offline save failed:', e.message);
+    toast('Local offline save failed. Stop billing and export backup.', true);
+  }
+}
+function saveStateCacheV41(data){
+  if(!data || !data.settings) return;
+  try{ localStorage.setItem(V41_OFFLINE.cacheKey, JSON.stringify({ cachedAt:new Date().toISOString(), deviceId:offlineDeviceId(), data })); }catch{}
+}
+function cachedStateV41(){
+  const c=safeJsonParseV41(localStorage.getItem(V41_OFFLINE.cacheKey), null);
+  return c?.data || null;
+}
+function offlineRefV41(){
+  const d=new Date(); const y=d.getFullYear(), m=String(d.getMonth()+1).padStart(2,'0'), day=String(d.getDate()).padStart(2,'0');
+  const key='swifttill_offline_seq_'+y+m+day;
+  const n=Number(localStorage.getItem(key)||0)+1; localStorage.setItem(key,String(n));
+  return `OFF-${y}${m}${day}-${String(n).padStart(4,'0')}`;
+}
+function hasPendingOfflineV41(){ return Object.values(localOrdersV41()).some(o=>!o.serverConfirmedAt && hasOrderLines(o)); }
+function pendingOfflineOrdersV41(){ return Object.values(localOrdersV41()).filter(o=>!o.serverConfirmedAt && hasOrderLines(o)).sort((a,b)=>new Date(a.createdAt)-new Date(b.createdAt)); }
+function offlineStatusTextV41(){
+  if(isTouchMobileDeviceV41() && !navigator.onLine) return 'Offline blocked on this device';
+  if(!navigator.onLine && isRegisteredCounterV41()) return 'Offline Counter Mode';
+  if(hasPendingOfflineV41()) return `${pendingOfflineOrdersV41().length} pending sync`;
+  return navigator.onLine ? 'Online / Synced' : 'Offline unavailable';
+}
+function mergeOfflineStateV41(base){
+  const data = clone(base || cachedStateV41() || {});
+  if(!data.settings) return data;
+  const orders = Object.values(localOrdersV41()).filter(o=>!o.serverConfirmedAt && hasOrderLines(o));
+  data.openOrders = Array.isArray(data.openOrders) ? data.openOrders.filter(o=>!orders.some(x=>x.id===o.id || x.clientOrderId===o.id)) : [];
+  data.paidOrders = Array.isArray(data.paidOrders) ? data.paidOrders : [];
+  for(const o of orders){
+    if(o.status==='PAID') data.paidOrders.unshift(o);
+    else data.openOrders.push(o);
+  }
+  data.openOrders.sort((a,b)=>new Date(a.createdAt)-new Date(b.createdAt));
+  if(Array.isArray(data.tables)){
+    data.tables = data.tables.map(t=>{
+      const local = orders.find(o=>o.status!=='PAID' && o.type==='DINE_IN' && o.tableId===t.id && hasOrderLines(o));
+      return local ? { ...t, busy:true, orderId:local.id, occupiedAt:local.tableOccupiedAt||local.createdAt, guests:local.guests||0, offline:true } : t;
+    });
+  }
+  data.offlineLocal = {
+    enabled:isRegisteredCounterV41(),
+    deviceId:offlineDeviceId(),
+    pending:pendingOfflineOrdersV41().length,
+    totalLocal:orders.length,
+    online:navigator.onLine,
+    lastMeta:safeJsonParseV41(localStorage.getItem(V41_OFFLINE.metaKey), {})
+  };
+  return data;
+}
+function makeLocalOrderV41(data){
+  const id='off_'+offlineDeviceId().replace(/[^a-z0-9_-]/gi,'')+'_'+Date.now().toString(36)+'_'+Math.random().toString(16).slice(2,7);
+  const taker=state?.orderTakers?.find(t=>t.id===data.orderTakerId);
+  const ref=offlineRefV41();
+  const createdAt=new Date().toISOString();
+  return { id, localId:id, clientOrderId:id, offlineRef:ref, number:ref, type:data.type, status:'DRAFT', tableId:data.type==='DINE_IN'?data.tableId:null, guests:data.type==='DINE_IN'?Number(data.guests||1):0, orderTakerId:data.orderTakerId||null, orderTakerName:taker?.name||'', customerName:data.customerName||'', mobile:data.mobile||'', address:data.address||'', deliveryNotes:data.deliveryNotes||'', deliveryFee:data.type==='DELIVERY'?Number(data.deliveryFee||state?.settings?.defaultDeliveryFee||0):0, lines:[], discountType:'NONE', discountValue:0, createdAt, updatedAt:createdAt, tableOccupiedAt:null, cashierId:state?.user?.id||'', cashierName:state?.user?.name||'Offline Counter', offline:true, syncStatus:'PENDING', timeline:[{event:'OFFLINE_CREATED',at:createdAt,by:state?.user?.name||'Offline Counter'}] };
+}
+function upsertLocalOrderV41(order, reason='order-update'){
+  if(!order?.id) return order;
+  const orders=localOrdersV41();
+  const next=clone(order);
+  next.offline=true; next.syncStatus='PENDING'; next.updatedAt=new Date().toISOString();
+  if(hasOrderLines(next) && next.type==='DINE_IN' && !next.tableOccupiedAt) next.tableOccupiedAt=next.createdAt||new Date().toISOString();
+  orders[next.id]=next;
+  saveLocalOrdersV41(orders, reason);
+  const base=state || cachedStateV41();
+  if(base) state=mergeOfflineStateV41(base);
+  updateOfflineDockV41();
+  return next;
+}
+function localReceiptV41(order){
+  const table=state?.tables?.find(t=>t.id===order.tableId)?.name||'';
+  return { business:state?.settings?.businessName||'SwiftTill POS', branchName:state?.settings?.branchName||'', phone:state?.settings?.phone||'', address:state?.settings?.address||'', logoUrl:state?.settings?.logoUrl||'', header:'OFFLINE BILL - PENDING SYNC', footer:'Offline sale saved locally. Sync to cloud when internet is available.', receiptWidth:state?.settings?.receiptWidth||'80mm', showLogoOnReceipt:state?.settings?.showLogoOnReceipt, showCustomerOnReceipt:state?.settings?.showCustomerOnReceipt, showOrderTakerOnReceipt:state?.settings?.showOrderTakerOnReceipt, showCashierOnReceipt:state?.settings?.showCashierOnReceipt, showPaymentBreakdown:state?.settings?.showPaymentBreakdown, number:order.number||order.offlineRef, offlineRef:order.offlineRef, date:order.paidAt||new Date().toISOString(), cashier:order.cashierName, type:order.type, table, guests:order.guests, orderTaker:order.orderTakerName, customer:order.customerName, mobile:order.mobile, addressLine:order.address, lines:order.lines, totals:calcTotals(order), payments:order.payments||[], offline:true };
+}
+function localPayGuardV41(order){
+  const payments=Array.isArray(order.payments)?order.payments:[];
+  if(payments.some(p=>p.method && p.method!=='Cash')) throw new Error('Offline payment mein sirf Cash allowed hai. Card/Online ke liye internet required hai.');
+}
+function localReportDataV41(path){
+  const params=new URLSearchParams(String(path).split('?')[1]||'');
+  const from=params.get('from')||'', to=params.get('to')||'';
+  const inRange=(iso)=>{ const t=new Date(iso||0).getTime(); const a=from?new Date(from+'T00:00:00').getTime():0; const b=to?new Date(to+'T23:59:59').getTime():Date.now()+86400000; return t>=a&&t<=b; };
+  const paid=[...(state?.paidOrders||[]), ...Object.values(localOrdersV41()).filter(o=>o.status==='PAID'&&!o.serverConfirmedAt)].filter(o=>inRange(o.paidAt||o.createdAt));
+  const rows=paid.map(o=>{ const t=calcTotals(o); return { id:o.id, number:o.number||o.offlineRef, date:o.paidAt||o.createdAt, type:o.type, table:state?.tables?.find(x=>x.id===o.tableId)?.name||'', guests:o.guests||0, customer:o.customerName||'', mobile:o.mobile||'', orderTaker:o.orderTakerName||'', cashier:o.cashierName||'', subtotal:t.subtotal, discount:t.discount, deliveryFee:t.deliveryFee, total:t.total, payments:(o.payments||[]).map(p=>p.method).join(', '), lines:o.lines||[], discountType:o.discountType, discountValue:o.discountValue, offline:!o.serverConfirmedAt }; });
+  const summary={orders:rows.length,gross:0,discounts:0,refunds:0,net:0,averageBill:0};
+  const paymentWise={}, orderTypeWise={}, itemMap={}, catMap={};
+  for(const o of paid){ const t=calcTotals(o); summary.gross+=t.subtotal+t.deliveryFee; summary.discounts+=t.discount; summary.net+=t.total; orderTypeWise[o.type]=(orderTypeWise[o.type]||0)+t.total; for(const p of (o.payments||[])) paymentWise[p.method]=(paymentWise[p.method]||0)+Number(p.amount||0); for(const l of (o.lines||[])){ const key=l.name||l.itemId||'Item'; if(!itemMap[key]) itemMap[key]={item:key,category:l.categoryName||l.categoryId||'Uncategorized',qty:0,sales:0,gross:0,discountShare:0,net:0}; const lineGross=((Number(l.price)||0)+(l.modifiers||[]).reduce((a,m)=>a+Number(m.price||0),0))*Number(l.qty||0); itemMap[key].qty+=Number(l.qty||0); itemMap[key].sales+=lineGross; itemMap[key].gross+=lineGross; itemMap[key].net+=lineGross; const cat=itemMap[key].category; catMap[cat]=(catMap[cat]||0)+lineGross; } }
+  summary.gross=Math.round(summary.gross*100)/100; summary.discounts=Math.round(summary.discounts*100)/100; summary.net=Math.round(summary.net*100)/100; summary.averageBill=summary.orders?Math.round((summary.net/summary.orders)*100)/100:0;
+  const paymentDetails=Object.entries(paymentWise).map(([method,amount])=>({method,count:rows.filter(r=>String(r.payments).includes(method)).length,received:amount,change:0,revenue:amount}));
+  const categoryDetails=Object.entries(catMap).map(([category,gross])=>({category,qty:0,gross,net:gross}));
+  const orderTypeDetails=Object.entries(orderTypeWise).map(([type,net])=>({type,orders:rows.filter(r=>r.type===type).length,guests:rows.filter(r=>r.type===type).reduce((s,r)=>s+Number(r.guests||0),0),gross:net,discount:0,net,averageBill:net/(rows.filter(r=>r.type===type).length||1)}));
+  return { ok:true, data:{ filters:{from,to}, offline:true, warning:'Offline/local report includes unsynced counter data. Final cloud report updates after Sync Now.', summary, paymentWise, orderTypeWise, itemWise:Object.values(itemMap), categoryWise:catMap, categoryDetails, paymentDetails, orderTypeDetails, discountWise:{count:rows.filter(r=>r.discount>0).length,amount:rows.reduce((s,r)=>s+r.discount,0),rows:rows.filter(r=>r.discount>0)}, refunds:[], voidOrders:[], shiftSummary:{shiftNumber:state?.activeShift?.number||'',shiftStatus:state?.activeShift?.status||'',openingCash:state?.activeShift?.openingCash||0,cashSales:paymentWise.Cash||0,cashRefunds:0,expectedCash:(state?.activeShift?.openingCash||0)+(paymentWise.Cash||0)}, orders:rows } };
+}
+function canHandleOfflineApiV41(path, method){
+  if(method==='GET' && (path==='/api/state' || path.startsWith('/api/reports'))) return true;
+  if(method==='POST' && ['/api/orders/create','/api/orders/save','/api/orders/pay','/api/orders/cart-sync'].includes(path)) return true;
+  return false;
+}
+async function offlineApiV41(path, data, method='POST'){
+  if(!isRegisteredCounterV41()) throw new Error('Offline mode is only allowed on the registered counter PC. Mobile/second device needs internet.');
+  if(method==='GET' && path==='/api/state'){
+    const cached=cachedStateV41();
+    if(!cached) throw new Error('No offline cache found. Open POS once with internet on this counter PC.');
+    return { ok:true, data:mergeOfflineStateV41(cached) };
+  }
+  if(method==='GET' && path.startsWith('/api/reports')) return localReportDataV41(path);
+  if(path==='/api/orders/create'){
+    if(data.type==='DINE_IN' && !data.tableId) throw new Error('Select table for Dine In order');
+    const busy = Object.values(localOrdersV41()).find(o=>!o.serverConfirmedAt && o.status!=='PAID' && o.type==='DINE_IN' && o.tableId===data.tableId && hasOrderLines(o));
+    if(data.type==='DINE_IN' && busy) throw new Error('This table already has an active offline order on this counter PC.');
+    const order=makeLocalOrderV41(data); upsertLocalOrderV41(order,'offline-create'); return { ok:true, order };
+  }
+  if(path==='/api/orders/save' || path==='/api/orders/cart-sync'){
+    const order={...data};
+    order.status = data.hold ? 'HELD' : (hasOrderLines(order) ? 'OPEN' : 'DRAFT');
+    if(order.status==='HELD') order.heldAt=new Date().toISOString();
+    const saved=upsertLocalOrderV41(order, data.hold?'offline-hold':'offline-cart-save');
+    return { ok:true, order:saved, totals:calcTotals(saved), sync:{revision:Date.now(), updatedAt:new Date().toISOString(), reason:'offline-local'} };
+  }
+  if(path==='/api/orders/pay'){
+    const order={...data, status:'PAID', paidAt:new Date().toISOString(), tableReleasedAt:new Date().toISOString()};
+    localPayGuardV41(order);
+    const t=calcTotals(order); if(t.total<=0) throw new Error('Order total must be greater than Rs 0.');
+    order.payments=(order.payments||[]).map(p=>({...p, amount:Number(p.amount||0), received:Number(p.received??p.amount??0), change:Number(p.change||0)}));
+    const saved=upsertLocalOrderV41(order,'offline-paid');
+    return { ok:true, order:saved, totals:t, receipt:localReceiptV41(saved), offline:true };
+  }
+  throw new Error('This action requires internet.');
+}
+const __v41BaseApi = api;
+api = async function(path, data, method='POST'){
+  const cleanPath=String(path).split('?')[0];
+  if(!navigator.onLine && canHandleOfflineApiV41(cleanPath, method)) return offlineApiV41(path, data||{}, method);
+  try{
+    const out = await __v41BaseApi(path, data, method);
+    if(method==='GET' && cleanPath==='/api/state' && out?.data){ ensureCounterRegisteredV41(); saveStateCacheV41(out.data); out.data=mergeOfflineStateV41(out.data); }
+    return out;
+  }catch(e){
+    const networkish = /Failed to fetch|NetworkError|Load failed|Internet connection required|fetch/i.test(e.message||'');
+    if(networkish && canHandleOfflineApiV41(cleanPath, method)) return offlineApiV41(path, data||{}, method);
+    throw e;
+  }
+};
+const __v41BaseLoadState = loadState;
+loadState = async function(){ const j=await api('/api/state', null, 'GET'); state=j.data; saveStateCacheV41(state); };
+loadStateQuiet = async function(){ const j=await apiQuiet('/api/state', null, 'GET'); if(j?.data){ state=mergeOfflineStateV41(j.data); saveStateCacheV41(state); } };
+boot = async function(){
+  if(!token) return renderLogin();
+  try{ await loadState(); renderShell(); startOfflineAutoSyncV41(); }
+  catch(e){
+    const cached=cachedStateV41();
+    if(cached && isRegisteredCounterV41()){ state=mergeOfflineStateV41(cached); renderShell(); startOfflineAutoSyncV41(); toast('Offline Counter Mode: local data safe; sync when internet returns.', true); }
+    else { renderOfflineSetupBlockedV41(e.message); }
+  }
+};
+function renderOfflineSetupBlockedV41(msg){
+  app.innerHTML=`<div class="login-screen"><div class="login-card"><div class="login-brand-text"><b>SwiftTill</b><span>POS</span></div><h1>Offline setup required</h1><p>${esc(msg||'Open this counter PC once with internet to cache POS data.')}</p><p class="muted-note">Mobile/second devices are online-only. Offline mode works only on registered counter PC.</p><button class="primary-btn" onclick="location.reload()" style="width:100%">Retry</button></div></div>`;
+}
+function updateOfflineDockV41(){
+  const el=document.getElementById('offlineDockV41'); if(!el) return;
+  const pending=pendingOfflineOrdersV41().length;
+  const meta=safeJsonParseV41(localStorage.getItem(V41_OFFLINE.metaKey),{});
+  const pct=V41_OFFLINE.progress.total?Math.round((V41_OFFLINE.progress.done/V41_OFFLINE.progress.total)*100):0;
+  el.className='offline-dock-v41 '+(!navigator.onLine?'offline':pending?'pending':'ok');
+  el.innerHTML=`<div><b>${esc(offlineStatusTextV41())}</b><span>${pending?`${pending} bill(s) pending cloud upload`:'Local queue clear'}${meta.at?` • Saved ${new Date(meta.at).toLocaleTimeString()}`:''}</span></div>${V41_OFFLINE.progress.active?`<div class="offline-progress"><i style="width:${pct}%"></i><em>${pct}%</em></div>`:''}<button type="button" id="dockSyncNowV41" ${(!navigator.onLine||!pending||V41_OFFLINE.syncing)?'disabled':''}>Sync Now</button>`;
+  const b=document.getElementById('dockSyncNowV41'); if(b) b.onclick=()=>syncOfflineNowV41(true);
+}
+function ensureOfflineDockV41(){
+  if(!document.getElementById('offlineDockV41')){ const el=document.createElement('div'); el.id='offlineDockV41'; document.body.appendChild(el); }
+  updateOfflineDockV41();
+}
+const __v41BaseRenderShell = renderShell;
+renderShell = function(){ __v41BaseRenderShell(); ensureOfflineDockV41(); };
+const __v41BaseRenderAdminShell = renderAdminShell;
+renderAdminShell = function(){ __v41BaseRenderAdminShell(); ensureOfflineDockV41(); };
+const __v41BaseRenderTopbar = renderTopbar;
+renderTopbar = function(){
+  const html=__v41BaseRenderTopbar();
+  const cls = !navigator.onLine ? 'offline' : hasPendingOfflineV41() ? 'pending' : 'ok';
+  return html.replace('<div class="top-items">', `<div class="top-items"><div class="top-pill sync-pill ${cls}"><span class="status-dot"></span><span><b>${esc(offlineStatusTextV41())}</b>${pendingOfflineOrdersV41().length?`${pendingOfflineOrdersV41().length} pending`: 'Ready'}</span></div>`);
+};
+const __v41BaseLabelTab = labelTab;
+labelTab = function(t){ return t==='sync' ? 'Sync Center' : __v41BaseLabelTab(t); };
+const __v41BaseTabIcon = tabIcon;
+tabIcon = function(t){ return t==='sync' ? '⇅' : __v41BaseTabIcon(t); };
+const __v41BaseRenderAdmin = renderAdmin;
+renderAdmin = function(ws){
+  __v41BaseRenderAdmin(ws);
+  const nav=document.querySelector('.admin-nav');
+  if(nav && !nav.querySelector('[data-admin-tab="sync"]')){
+    const wrap=document.createElement('div'); wrap.className='admin-nav-slot '+(adminTab==='sync'?'active-slot':'');
+    wrap.innerHTML=`<button class="${adminTab==='sync'?'active':''}" data-admin-tab="sync"><span class="admin-nav-icon">⇅</span><span>Sync Center</span></button>`;
+    nav.insertBefore(wrap, nav.children[2] || null);
+    wrap.querySelector('button').onclick=()=>{adminTab='sync';renderAdmin(ws);};
+  }
+  if(adminTab==='sync') renderSyncCenterV41(document.getElementById('adminContent'));
+};
+const __v41BaseRenderAdminContent = renderAdminContent;
+renderAdminContent = function(){
+  const c=document.getElementById('adminContent');
+  if(adminTab==='sync') return renderSyncCenterV41(c);
+  return __v41BaseRenderAdminContent();
+};
+function renderSyncCenterV41(c){
+  if(!c) return;
+  const rows=pendingOfflineOrdersV41();
+  const meta=safeJsonParseV41(localStorage.getItem(V41_OFFLINE.metaKey),{});
+  const pct=V41_OFFLINE.progress.total?Math.round((V41_OFFLINE.progress.done/V41_OFFLINE.progress.total)*100):0;
+  c.innerHTML=`<div class="module-title"><div><h3>Sync Center</h3><p class="muted-note">Single counter offline queue. Data clears only after cloud server confirms upload.</p></div><div class="actions-mini"><button class="primary-btn" id="syncNowV41" ${(!navigator.onLine||!rows.length||V41_OFFLINE.syncing)?'disabled':''}>Sync Now</button><button class="ghost-btn" id="exportOfflineV41">Export Emergency Backup</button></div></div>
+    <div class="sync-status-grid"><div class="card metric"><p>Internet</p><h3>${navigator.onLine?'Online':'Offline'}</h3></div><div class="card metric"><p>Pending Upload</p><h3>${rows.length}</h3></div><div class="card metric"><p>Device</p><h3>${isRegisteredCounterV41()?'Counter PC':'Blocked'}</h3></div><div class="card metric"><p>Last Local Save</p><h3>${meta.at?new Date(meta.at).toLocaleTimeString():'—'}</h3></div></div>
+    <div class="card subcard sync-card"><h3>Upload Progress</h3><div class="sync-progress-bar"><i style="width:${pct}%"></i></div><p>${esc(V41_OFFLINE.progress.message || (rows.length?'Ready to upload pending bills.':'No pending offline data.'))}</p><p class="muted-note">Cash sales, discounts, totals and lines are synced as final bill snapshots. If internet stays off for weeks, queue remains on this registered counter PC.</p></div>
+    <div class="card subcard"><h3>Pending Bills</h3><div class="report-table-wrap"><table class="admin-table"><thead><tr><th>Offline Ref</th><th>Status</th><th>Type</th><th>Items</th><th>Total</th><th>Saved</th></tr></thead><tbody>${rows.length?rows.map(o=>`<tr><td>${esc(o.offlineRef||o.number)}</td><td>${esc(o.status)}</td><td>${esc(formatType(o.type))}</td><td>${(o.lines||[]).reduce((s,l)=>s+Number(l.qty||0),0)}</td><td>${money(calcTotals(o).total)}</td><td>${new Date(o.updatedAt||o.createdAt).toLocaleString()}</td></tr>`).join(''):'<tr><td colspan="6">No pending offline bills.</td></tr>'}</tbody></table></div></div>
+    <div class="card subcard"><h3>Safety Rules</h3><p>✓ Mobile/second device offline billing blocked</p><p>✓ Cash-only offline payment</p><p>✓ Local WAL + backup copy written before screen update</p><p>✓ Manual Sync keeps failed/conflict bills pending</p><p>✓ Reports show offline warning until final cloud sync</p></div>`;
+  $('#syncNowV41') && ($('#syncNowV41').onclick=()=>syncOfflineNowV41(true));
+  $('#exportOfflineV41') && ($('#exportOfflineV41').onclick=exportOfflineBackupV41);
+}
+function exportOfflineBackupV41(){
+  const payload={app:'SwiftTill POS',version:'44.0.0-offline-auth-operational-safety',exportedAt:new Date().toISOString(),deviceId:offlineDeviceId(),state:cachedStateV41(),orders:localOrdersV41(),meta:safeJsonParseV41(localStorage.getItem(V41_OFFLINE.metaKey),{})};
+  const blob=new Blob([JSON.stringify(payload,null,2)],{type:'application/json'});
+  const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=`swifttill-offline-backup-${Date.now()}.json`; a.click(); URL.revokeObjectURL(a.href);
+}
+async function syncOfflineNowV41(manual=false){
+  if(V41_OFFLINE.syncing) return;
+  const rows=pendingOfflineOrdersV41();
+  if(!rows.length){ updateOfflineDockV41(); if(manual) toast('No pending offline data.'); return; }
+  if(!navigator.onLine){ if(manual) toast('Internet required for Sync Now.', true); return; }
+  V41_OFFLINE.syncing=true; V41_OFFLINE.progress={active:true,done:0,total:rows.length,message:'Preparing upload...'}; updateOfflineDockV41(); if(adminTab==='sync') renderAdminContent();
+  try{
+    const batchId='batch-'+Date.now().toString(36)+'-'+Math.random().toString(16).slice(2,8);
+    V41_OFFLINE.progress.message='Uploading bills to cloud...'; updateOfflineDockV41(); if(adminTab==='sync') renderAdminContent();
+    const out=await __v41BaseApi('/api/offline/sync',{deviceId:offlineDeviceId(),batchId,orders:rows},'POST');
+    const orders=localOrdersV41();
+    let synced=0, conflicts=0, failed=0;
+    for(const r of (out.results||[])){
+      V41_OFFLINE.progress.done += 1;
+      if(['synced','already-synced','skipped-empty'].includes(r.status)){
+        if(orders[r.localId]){ orders[r.localId].serverConfirmedAt=new Date().toISOString(); orders[r.localId].serverId=r.serverId||orders[r.localId].serverId; orders[r.localId].serverNumber=r.number||orders[r.localId].serverNumber; orders[r.localId].syncStatus='SYNCED'; }
+        synced += 1;
+      } else if(r.status==='conflict') { if(orders[r.localId]) orders[r.localId].syncStatus='CONFLICT'; conflicts += 1; }
+      else { if(orders[r.localId]) orders[r.localId].syncStatus='FAILED'; failed += 1; }
+      V41_OFFLINE.progress.message=`Uploaded ${V41_OFFLINE.progress.done}/${V41_OFFLINE.progress.total}`; updateOfflineDockV41();
+    }
+    saveLocalOrdersV41(orders,'offline-sync-result');
+    await loadState().catch(()=>null);
+    V41_OFFLINE.progress.message = conflicts||failed ? `Sync completed with ${conflicts} conflict(s), ${failed} failed.` : `Sync completed. ${synced} bill(s) confirmed.`;
+    toast(V41_OFFLINE.progress.message, conflicts||failed);
+  }catch(e){ V41_OFFLINE.progress.message='Sync failed: '+(e.message||'network error'); toast(V41_OFFLINE.progress.message,true); }
+  finally{
+    V41_OFFLINE.syncing=false;
+    setTimeout(()=>{ V41_OFFLINE.progress.active=false; updateOfflineDockV41(); if(adminTab==='sync') renderAdminContent(); },1200);
+  }
+}
+function startOfflineAutoSyncV41(){
+  ensureCounterRegisteredV41();
+  if(V41_OFFLINE.syncTimer) return;
+  V41_OFFLINE.syncTimer=setInterval(()=>{ if(navigator.onLine && hasPendingOfflineV41()) syncOfflineNowV41(false); updateOfflineDockV41(); },30000);
+  window.addEventListener('online',()=>{ updateOfflineDockV41(); setTimeout(()=>syncOfflineNowV41(false),1500); });
+  window.addEventListener('offline',()=>{ updateOfflineDockV41(); toast(isRegisteredCounterV41()?'Offline Counter Mode enabled. Local billing is being saved safely.':'Offline blocked on this device.', true); });
+  setTimeout(()=>{ if(navigator.onLine && hasPendingOfflineV41()) syncOfflineNowV41(false); updateOfflineDockV41(); },1800);
+}
+const __v41BaseMarkCartDirty = markCartDirty;
+markCartDirty = function(){
+  if(currentOrder && (!navigator.onLine || currentOrder.offline || String(currentOrder.id||'').startsWith('off_'))) upsertLocalOrderV41(currentOrder,'offline-cart-change');
+  return __v41BaseMarkCartDirty();
+};
+const __v41BasePrintReceipt = printReceipt;
+printReceipt = async function(r){
+  if(r?.offline) r.header = r.header || 'OFFLINE BILL - PENDING SYNC';
+  return __v41BasePrintReceipt(r);
+};
+async function scheduleAgentBackupV41(orders, reason){
+  const nowMs=Date.now();
+  if(nowMs - V41_OFFLINE.lastBackupAt < 5000) return;
+  V41_OFFLINE.lastBackupAt = nowMs;
+  const url=(state?.settings?.localAgentUrl||'http://127.0.0.1:9721/print').replace('/print','/offline-backup');
+  try{ await fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({reason,deviceId:offlineDeviceId(),at:new Date().toISOString(),orders})}); }catch{}
+}
+if('serviceWorker' in navigator){ navigator.serviceWorker.register('/sw.js').catch(()=>{}); }
+setInterval(updateOfflineDockV41, 5000);
+
+
+
+/* ============================================================
+   SwiftTill V42 Professional Offline Payments + Full Reports
+   Card/Online are complete captured payment records, not simple selections.
+============================================================ */
+const V42_PAYMENT_VERSION = '44.0.0-offline-auth-operational-safety';
+function isOfflineRuntimeV42(){ return !navigator.onLine || Boolean(currentOrder?.offline) || String(currentOrder?.id||'').startsWith('off_'); }
+function paymentRefRequiredV42(method, amount){ return false; /* V43: selection is enough; reference optional */ }
+function paymentMetaV42(base={}){
+  const method = base.method || '';
+  const ref = String(base.reference || base.ref || base.transactionId || '').trim();
+  const provider = String(base.provider || '').trim();
+  const approvalCode = String(base.approvalCode || '').trim();
+  const terminal = String(base.terminal || '').trim();
+  const cardLast4 = String(base.cardLast4 || '').replace(/[^0-9]/g,'').slice(-4);
+  const offline = isOfflineRuntimeV42();
+  return { reference: ref, provider, approvalCode, terminal, cardLast4, capturedAt: new Date().toISOString(), verificationStatus: method==='Cash' ? 'VERIFIED' : (offline ? 'PENDING_SYNC' : 'VERIFIED'), settlementStatus: method==='Cash' ? 'SETTLED' : (offline ? 'PENDING_RECONCILIATION' : 'CAPTURED'), offlineCaptured: offline && method!=='Cash' };
+}
+function validateLocalPaymentRefV42(method, amount, ref, label){
+  return true; // V43: reference/slip/transaction number is optional, not blocking
+}
+function buildPaymentBadgeV42(){
+  const offline=isOfflineRuntimeV42();
+  return `<div class="pay-system-note ${offline?'offline':''}"><b>${offline?'Offline Payment Capture':'Online Payment Capture'}</b><span>${offline?'Cash, card and online entries are saved locally with reference numbers and sync as final payment snapshots.':'Card/Online require terminal/app reference, then reports record method, reference, received, change and revenue.'}</span></div>`;
+}
+openPayModal = async function(){
+  if(!currentOrder || !currentOrder.lines?.length) return toast('Add items before payment',true);
+  if(currentOrder) sanitizeDiscountClient(currentOrder,true);
+  const t = calcTotals(currentOrder);
+  if(t.total<=0) return toast('Total payable is Rs 0. Check prices/discount before payment.', true);
+  if(currentOrder.type==='DINE_IN' && !currentOrder.tableId) return toast('Select table before payment', true);
+  if(navigator.onLine) await syncNow('before-pay');
+  const offline = isOfflineRuntimeV42();
+  openModal(`<div class="modal-head"><h2>Payment</h2><button class="x" onclick="closeModal()">×</button></div>${buildPaymentBadgeV42()}<div class="pay-total-card"><span>Total payable</span><b>${money(t.total)}</b></div><div class="seg pay-seg"><button class="active" data-paytab="cash">Cash</button><button data-paytab="card">Card</button><button data-paytab="online">Online</button></div><div id="payFields"></div><label class="check mt"><input id="payPrint" type="checkbox" ${getPrintDefault()?'checked':''}> Print receipt after payment</label><label class="check"><input id="splitPay" type="checkbox"> Split payment</label><button class="primary-btn mt full-width-btn" id="completePay">Complete Payment</button>`);
+  let tab='cash';
+  const exactNote = offline ? 'Offline Card/Online selection is saved locally. Reference/slip number is optional for audit only.' : 'Reference is optional; payment method, amount and cashier are still recorded in reports.';
+  const amountBox=(prefix,label,value)=>`<div class="field"><label>${label}</label><input id="${prefix}Amount" type="number" value="${value}" min="0" step="0.01" inputmode="decimal"></div>`;
+  const calcBox=(prefix,amount)=>`<div class="split-summary pay-calc"><div><span>Total</span><b>${money(t.total)}</b></div><div><span>Entered</span><b id="${prefix}Entered">${money(amount)}</b></div><div><span id="${prefix}BalanceLabel">Remaining</span><b id="${prefix}Balance">${money(Math.abs(amount-t.total))}</b></div></div>`;
+  const updateSingleCalc=(prefix)=>{ const val=Number($('#'+prefix+'Amount')?.value||0); const diff=val-t.total; const bal=$('#'+prefix+'Balance'); if(!bal) return; $('#'+prefix+'Entered').textContent=money(val); $('#'+prefix+'BalanceLabel').textContent = diff<0 ? 'Remaining' : (prefix==='cash' ? 'Change' : 'Extra not allowed'); bal.textContent=money(Math.abs(diff)); bal.classList.toggle('danger-text', diff<0 || (diff>0 && prefix!=='cash')); bal.classList.toggle('ok-text', diff>=0 && (prefix==='cash' || diff===0)); };
+  const draw=()=>{
+    $$('[data-paytab]').forEach(b=>b.classList.toggle('active',b.dataset.paytab===tab));
+    const split=$('#splitPay')?.checked; const f=$('#payFields');
+    if(split){
+      f.innerHTML=`<div class="split-summary"><div><span>Total</span><b>${money(t.total)}</b></div><div><span>Paid / Received</span><b id="splitPaid">${money(0)}</b></div><div><span id="splitBalanceLabel">Remaining</span><b id="splitRemaining">${money(t.total)}</b></div></div><div class="grid3 payment-auth-grid"><div class="field"><label>Cash Received</label><input id="cashAmt" class="split-amt" type="number" value="0" min="0" step="0.01"></div><div class="field"><label>Card Amount</label><input id="cardAmt" class="split-amt" type="number" value="0" min="0" step="0.01"></div><div class="field"><label>Online Amount</label><input id="onlineAmt" class="split-amt" type="number" value="0" min="0" step="0.01"></div></div><div class="grid2 payment-auth-grid"><div class="field"><label>Card Slip / Approval Ref</label><input id="splitCardRef" placeholder="Optional"></div><div class="field"><label>Online Provider</label><select id="splitOnlineProvider"><option value="">Select provider</option><option>Easypaisa</option><option>JazzCash</option><option>Bank Transfer</option><option>Raast</option><option>Other</option></select></div><div class="field"><label>Online Transaction Ref</label><input id="splitOnlineRef" placeholder="Optional"></div><div class="field"><label>Card Terminal</label><input id="splitCardTerminal" placeholder="POS terminal / bank name"></div></div><div class="quick-fill-row"><button type="button" class="ghost-btn" data-fill-remaining="cashAmt">Cash remaining</button><button type="button" class="ghost-btn" data-fill-remaining="cardAmt">Card remaining</button><button type="button" class="ghost-btn" data-fill-remaining="onlineAmt">Online remaining</button></div><p class="muted-note">${exactNote} Extra amount is accepted only through cash as change.</p>`;
+      const update=()=>{ const cash=Number($('#cashAmt')?.value||0), card=Number($('#cardAmt')?.value||0), online=Number($('#onlineAmt')?.value||0); const paid=cash+card+online; const rem=t.total-paid; $('#splitPaid').textContent=money(paid); $('#splitBalanceLabel').textContent=rem<0?'Change / Extra':'Remaining'; $('#splitRemaining').textContent=money(Math.abs(rem)); $('#splitRemaining').classList.toggle('danger-text', rem>0 || (rem<0 && cash<Math.abs(rem))); $('#splitRemaining').classList.toggle('ok-text', rem<=0 && (rem>=0 || cash>=Math.abs(rem))); };
+      $$('.split-amt').forEach(i=>i.addEventListener('input',update));
+      $$('[data-fill-remaining]').forEach(btn=>btn.onclick=()=>{ const target=$('#'+btn.dataset.fillRemaining); const paidOther=['cashAmt','cardAmt','onlineAmt'].filter(id=>id!==btn.dataset.fillRemaining).reduce((s,id)=>s+Number($('#'+id)?.value||0),0); target.value=Math.max(0,t.total-paidOther); update(); });
+      update(); return;
+    }
+    if(tab==='cash') f.innerHTML=`${amountBox('cash','Cash Received',Math.ceil(t.total/50)*50)}${calcBox('cash',Math.ceil(t.total/50)*50)}<p class="muted-note">Cash extra is returned as change. Change is not revenue.</p>`;
+    if(tab==='card') f.innerHTML=`${amountBox('card','Card Approved Amount',t.total)}${calcBox('card',t.total)}<div class="grid2 payment-auth-grid"><div class="field"><label>Card Slip / Approval Ref <span class="optional-label">optional</span></label><input id="cardRef" placeholder="e.g. bank slip / approval code"></div><div class="field"><label>Terminal / Bank</label><input id="cardTerminal" placeholder="Optional terminal/bank"></div><div class="field"><label>Approval Code</label><input id="cardApproval" placeholder="Optional"></div><div class="field"><label>Card Last 4</label><input id="cardLast4" maxlength="4" inputmode="numeric" placeholder="Optional"></div></div><p class="muted-note">${exactNote}</p>`;
+    if(tab==='online') f.innerHTML=`${amountBox('online','Online Approved Amount',t.total)}${calcBox('online',t.total)}<div class="grid2 payment-auth-grid"><div class="field"><label>Provider <span class="optional-label">optional</span></label><select id="onlineProvider"><option value="">Select provider</option><option>Easypaisa</option><option>JazzCash</option><option>Bank Transfer</option><option>Raast</option><option>Other</option></select></div><div class="field"><label>Transaction Ref <span class="optional-label">optional</span></label><input id="onlineRef" placeholder="Txn ID / transfer ref"></div></div><p class="muted-note">${exactNote}</p>`;
+    ['cash','card','online'].forEach(prefix=>$('#'+prefix+'Amount')?.addEventListener('input',()=>updateSingleCalc(prefix)));
+    updateSingleCalc(tab);
+  };
+  $$('[data-paytab]').forEach(b=>b.onclick=()=>{tab=b.dataset.paytab;draw();}); $('#splitPay').onchange=draw; draw();
+  $('#completePay').onclick=async()=>{
+    if(!requireOrderLines('Add at least one item before Payment')) return;
+    sanitizeDiscountClient(currentOrder,true);
+    const t2=calcTotals(currentOrder);
+    try{
+      const split=$('#splitPay').checked; let payments=[];
+      if(split){
+        const cash=Number($('#cashAmt').value||0), card=Number($('#cardAmt').value||0), online=Number($('#onlineAmt').value||0); const paid=cash+card+online; const remaining=t2.total-paid;
+        if(remaining>0.009) throw new Error(`Remaining amount: ${money(remaining)}`);
+        const extra=Math.max(0,paid-t2.total); if(extra>0.009 && cash<extra) throw new Error('Extra amount must be cash so change can be returned.');
+        const cashRevenue=Math.max(0,cash-extra);
+        if(card>0) validateLocalPaymentRefV42('Card',card,$('#splitCardRef').value,'Card');
+        if(online>0) validateLocalPaymentRefV42('Online',online,$('#splitOnlineRef').value,'Online');
+        payments=[
+          cash>0?{method:'Cash',amount:cashRevenue,received:cash,change:extra}:null,
+          card>0?{method:'Card',amount:card,received:card,reference:$('#splitCardRef').value,terminal:$('#splitCardTerminal').value,...paymentMetaV42({method:'Card',reference:$('#splitCardRef').value,terminal:$('#splitCardTerminal').value})}:null,
+          online>0?{method:'Online',amount:online,received:online,reference:$('#splitOnlineRef').value,provider:$('#splitOnlineProvider').value,...paymentMetaV42({method:'Online',reference:$('#splitOnlineRef').value,provider:$('#splitOnlineProvider').value})}:null
+        ].filter(Boolean);
+      } else if(tab==='cash'){
+        const rec=Number($('#cashAmount').value||0); if(rec<t2.total) throw new Error('Cash received is less than total'); payments=[{method:'Cash',amount:t2.total,received:rec,change:Math.max(0,rec-t2.total),...paymentMetaV42({method:'Cash'})}];
+      } else if(tab==='card'){
+        const entered=Number($('#cardAmount').value||0); if(entered<t2.total) throw new Error(`Remaining amount: ${money(t2.total-entered)}`); if(entered>t2.total) throw new Error('Card extra detected. Enter exact card amount.'); validateLocalPaymentRefV42('Card',entered,$('#cardRef').value,'Card'); payments=[{method:'Card',amount:t2.total,received:entered,reference:$('#cardRef').value,terminal:$('#cardTerminal').value,approvalCode:$('#cardApproval').value,cardLast4:$('#cardLast4').value,...paymentMetaV42({method:'Card',reference:$('#cardRef').value,terminal:$('#cardTerminal').value,approvalCode:$('#cardApproval').value,cardLast4:$('#cardLast4').value})}];
+      } else {
+        const entered=Number($('#onlineAmount').value||0); if(entered<t2.total) throw new Error(`Remaining amount: ${money(t2.total-entered)}`); if(entered>t2.total) throw new Error('Online extra detected. Enter exact online amount.'); validateLocalPaymentRefV42('Online',entered,$('#onlineRef').value,'Online'); payments=[{method:'Online',amount:t2.total,received:entered,reference:$('#onlineRef').value,provider:$('#onlineProvider').value,...paymentMetaV42({method:'Online',reference:$('#onlineRef').value,provider:$('#onlineProvider').value})}];
+      }
+      const j=await api('/api/orders/pay',{...currentOrder,payments}); lastReceipt=j.receipt; const doPrint=$('#payPrint').checked; localStorage.setItem('swifttill_print_default', doPrint?'1':'0'); currentOrder=null; screen='pos'; centerMode='menu'; await loadState().catch(()=>null); renderShell(); closeModal(); toast(offline?'Offline payment saved safely. Sync when internet is available.':'Payment completed'); showReceiptModal(lastReceipt, doPrint);
+    }catch(e){toast(e.message,true);}
+  };
+};
+function localPayGuardV41(order){
+  const payments=Array.isArray(order.payments)?order.payments:[];
+  for(const p of payments){
+    if(p.method==='Card' || p.method==='Online') validateLocalPaymentRefV42(p.method, p.amount||p.received, p.reference || p.approvalCode || p.provider, p.method);
+    if(p.method==='Card' || p.method==='Online'){ p.offlineCaptured=true; p.verificationStatus='PENDING_SYNC'; p.settlementStatus='PENDING_RECONCILIATION'; }
+  }
+}
+function payRefLabelV42(p){
+  const bits=[]; if(p.provider) bits.push(p.provider); if(p.terminal) bits.push(p.terminal); if(p.reference) bits.push('Ref '+p.reference); if(p.approvalCode) bits.push('Approval '+p.approvalCode); if(p.cardLast4) bits.push('****'+p.cardLast4); if(p.verificationStatus && p.verificationStatus!=='VERIFIED') bits.push(p.verificationStatus); return bits.join(' • ');
+}
+const __v42ReceiptText = receiptText;
+receiptText = function(r){
+  const base=__v42ReceiptText(r); const refs=(r.payments||[]).map(payRefLabelV42).filter(Boolean); return refs.length ? base.replace(/Thank you|Generated by SwiftTill POS|Offline sale saved locally\. Sync to cloud when internet is available\./, m=>`Payment Refs:\n${refs.join('\n')}\n${m}`) : base;
+};
+const __v42ReceiptHTML = receiptHTML;
+receiptHTML = function(r){
+  let html=__v42ReceiptHTML(r); const refs=(r.payments||[]).map(p=>({method:p.method,txt:payRefLabelV42(p)})).filter(x=>x.txt); if(refs.length){ const block=`<div class="sep"></div><div class="payment-ref-block"><b>Payment References</b>${refs.map(x=>`<div class="r sub"><span>${esc(x.method)}</span><span>${esc(x.txt)}</span></div>`).join('')}</div>`; html=html.replace('<div class="sep"></div><div class="c">', block+'<div class="sep"></div><div class="c">'); } return html;
+};
+function paymentRowsForReportsV42(orders){
+  const out={};
+  for(const o of orders){ for(const p of (o.payments||[])){ const m=p.method||'Unknown'; out[m] ||= {method:m,count:0,received:0,change:0,revenue:0,pending:0}; out[m].count+=1; out[m].received+=Number(p.received ?? p.amount ?? 0); out[m].change+=Number(p.change||0); out[m].revenue+=Number(p.amount||0); if(p.verificationStatus && p.verificationStatus!=='VERIFIED') out[m].pending+=1; } }
+  Object.values(out).forEach(x=>{x.received=Math.round(x.received*100)/100;x.change=Math.round(x.change*100)/100;x.revenue=Math.round(x.revenue*100)/100;});
+  return out;
+}
+function localReportDataV41(path){
+  const params=new URLSearchParams(String(path).split('?')[1]||'');
+  const from=params.get('from')||'', to=params.get('to')||'';
+  const wantPayment=String(params.get('paymentMode')||'').toLowerCase(), wantItem=params.get('itemId')||'', wantCategory=params.get('categoryId')||'', wantOrderType=params.get('orderType')||'', wantCashier=params.get('cashierId')||'', wantTaker=params.get('orderTakerId')||'';
+  const discountOnly=params.get('discountOnly')==='1';
+  const inRange=(iso)=>{ const t=new Date(iso||0).getTime(); const a=from?new Date(from+'T00:00:00').getTime():0; const b=to?new Date(to+'T23:59:59').getTime():Date.now()+86400000; return t>=a&&t<=b; };
+  const cloudPaid=[...(state?.paidOrders||[]), ...(state?.orders||[]).filter(o=>o.status==='PAID')];
+  const localPaid=Object.values(localOrdersV41()).filter(o=>o.status==='PAID'&&!o.serverConfirmedAt);
+  const seen=new Set();
+  let paid=[...cloudPaid,...localPaid].filter(o=>{ const key=o.serverId||o.id||o.offlineRef||o.number; if(seen.has(key)) return false; seen.add(key); return inRange(o.paidAt||o.createdAt); });
+  paid=paid.filter(o=>{ const ot=calcTotals(o); if(wantPayment && !(o.payments||[]).some(p=>String(p.method||'').toLowerCase()===wantPayment)) return false; if(wantItem && !(o.lines||[]).some(l=>l.itemId===wantItem||l.dealId===wantItem)) return false; if(wantCategory && !(o.lines||[]).some(l=>l.categoryId===wantCategory)) return false; if(wantOrderType && o.type!==wantOrderType) return false; if(wantCashier && o.cashierId!==wantCashier) return false; if(wantTaker && o.orderTakerId!==wantTaker) return false; if(discountOnly && ot.discount<=0) return false; return true; });
+  const rows=paid.map(o=>{ const t=calcTotals(o); return { id:o.id, number:o.number||o.offlineRef, date:o.paidAt||o.createdAt, type:o.type, table:state?.tables?.find(x=>x.id===o.tableId)?.name||'', guests:o.guests||0, customer:o.customerName||'', mobile:o.mobile||'', orderTaker:o.orderTakerName||'', cashier:o.cashierName||'', subtotal:t.subtotal, discount:t.discount, deliveryFee:t.deliveryFee, total:t.total, payments:(o.payments||[]).map(p=>`${p.method}${p.reference?` Ref:${p.reference}`:''}${p.verificationStatus&&p.verificationStatus!=='VERIFIED'?` (${p.verificationStatus})`:''}`).join(', '), lines:o.lines||[], discountType:o.discountType, discountValue:o.discountValue, offline:!o.serverConfirmedAt && (o.offline||String(o.number||'').startsWith('OFF-')) }; });
+  const summary={orders:rows.length,guests:rows.reduce((sum,r)=>sum+Number(r.guests||0),0),gross:0,discounts:0,refunds:0,net:0,averageBill:0,totalReceived:0,changeReturned:0};
+  const orderTypeWise={}, itemMap={}, catMap={}, catDetail={}, orderTypeDetails={}, discountRows=[];
+  const paymentDetailMap=paymentRowsForReportsV42(paid), paymentWise={}; Object.values(paymentDetailMap).forEach(p=>{paymentWise[p.method]=p.revenue; summary.totalReceived+=p.received; summary.changeReturned+=p.change;});
+  for(const o of paid){ const t=calcTotals(o); summary.gross+=t.subtotal+t.deliveryFee; summary.discounts+=t.discount; summary.net+=t.total; orderTypeWise[o.type]=(orderTypeWise[o.type]||0)+t.total; orderTypeDetails[o.type] ||= {type:o.type,orders:0,guests:0,gross:0,discount:0,net:0}; orderTypeDetails[o.type].orders+=1; orderTypeDetails[o.type].guests+=Number(o.guests||0); orderTypeDetails[o.type].gross+=t.subtotal+t.deliveryFee; orderTypeDetails[o.type].discount+=t.discount; orderTypeDetails[o.type].net+=t.total; if(t.discount>0) discountRows.push(rows.find(r=>(r.id===o.id))||{}); for(const l of (o.lines||[])){ const key=l.name||l.itemId||'Item'; const cat=l.categoryName||state?.categories?.find(c=>c.id===l.categoryId)?.name||l.categoryId||'Uncategorized'; const lineGross=((Number(l.price)||0)+(l.modifiers||[]).reduce((a,m)=>a+Number(m.price||0),0))*Number(l.qty||0); itemMap[key] ||= {item:key,category:cat,qty:0,gross:0,discountShare:0,net:0,sales:0}; itemMap[key].qty+=Number(l.qty||0); itemMap[key].gross+=lineGross; itemMap[key].sales+=lineGross; itemMap[key].net+=lineGross; catMap[cat]=(catMap[cat]||0)+lineGross; catDetail[cat] ||= {category:cat,qty:0,gross:0,net:0}; catDetail[cat].qty+=Number(l.qty||0); catDetail[cat].gross+=lineGross; catDetail[cat].net+=lineGross; } }
+  ['gross','discounts','net','totalReceived','changeReturned'].forEach(k=>summary[k]=Math.round(summary[k]*100)/100); summary.averageBill=summary.orders?Math.round((summary.net/summary.orders)*100)/100:0;
+  Object.values(itemMap).forEach(row=>{ row.discountShare=summary.gross?Math.round((summary.discounts*(row.gross/summary.gross))*100)/100:0; row.net=Math.round((row.gross-row.discountShare)*100)/100; });
+  Object.values(orderTypeDetails).forEach(row=>{ ['gross','discount','net'].forEach(k=>row[k]=Math.round(row[k]*100)/100); row.averageBill=row.orders?Math.round((row.net/row.orders)*100)/100:0; });
+  const pendingRefs=paid.flatMap(o=>(o.payments||[]).filter(p=>p.verificationStatus&&p.verificationStatus!=='VERIFIED').map(p=>({bill:o.number||o.offlineRef,method:p.method,reference:p.reference||'',status:p.verificationStatus,amount:p.amount||0})));
+  return { ok:true, data:{ filters:{from,to}, range:{from,to}, offline:true, warning:`OFFLINE REPORT: includes cached cloud sales + ${localPaid.length} unsynced local sale(s). Final cloud report will update after Sync Now.`, pendingPaymentRefs:pendingRefs, unsyncedOrders:localPaid.length, summary, paymentWise, orderTypeWise, itemWise:Object.values(itemMap).sort((a,b)=>b.net-a.net), categoryWise:catMap, categoryDetails:Object.values(catDetail), paymentDetails:Object.values(paymentDetailMap), orderTypeDetails:Object.values(orderTypeDetails), discountWise:{count:discountRows.length,amount:summary.discounts,rows:discountRows}, refunds:[], voidOrders:[], shiftSummary:{shiftNumber:state?.activeShift?.number||'',shiftStatus:state?.activeShift?.status||'',openingCash:state?.activeShift?.openingCash||0,cashSales:paymentWise.Cash||0,cashRefunds:0,expectedCash:(state?.activeShift?.openingCash||0)+(paymentWise.Cash||0)}, orders:rows } };
+}
+const __v42ReportHeaderHtml = reportHeaderHtml;
+reportHeaderHtml = function(r){ const warn=r?.warning?`<div class="offline-report-banner"><b>Offline report mode</b><span>${esc(r.warning)}</span></div>`:''; const pending=(r?.pendingPaymentRefs||[]).length?`<div class="offline-report-banner amber"><b>Pending payment reconciliation</b><span>${r.pendingPaymentRefs.length} card/online payment(s) pending cloud sync/reconciliation.</span></div>`:''; return warn+pending+__v42ReportHeaderHtml(r); };
+const __v42DownloadApi = downloadApi;
+downloadApi = async function(path, filename){
+  if(!navigator.onLine && String(path).startsWith('/api/export')) return exportOfflineReportCsvV42(path, filename);
+  return __v42DownloadApi(path, filename);
+};
+function exportOfflineReportCsvV42(path, filename){
+  const r=localReportDataV41(path).data; const rows=[['Report','Offline Export'],['Warning',r.warning],[],['Bill No','Date','Order Type','Table','Guests','Customer','Mobile','Order Taker','Cashier','Subtotal','Discount','Delivery Fee','Total','Payments']].concat((r.orders||[]).map(o=>[o.number,o.date,o.type,o.table,o.guests,o.customer,o.mobile,o.orderTaker,o.cashier,o.subtotal,o.discount,o.deliveryFee,o.total,o.payments]));
+  const csv=rows.map(row=>row.map(v=>`"${String(v??'').replace(/"/g,'""')}"`).join(',')).join('\n'); const blob=new Blob([csv],{type:'text/csv;charset=utf-8'}); const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=filename||`swifttill-offline-report-${Date.now()}.csv`; a.click(); URL.revokeObjectURL(a.href); toast('Offline report exported');
+}
+function renderSyncCenterV41(c){
+  if(!c) return; const rows=pendingOfflineOrdersV41(); const all=Object.values(localOrdersV41()); const meta=safeJsonParseV41(localStorage.getItem(V41_OFFLINE.metaKey),{}); const pct=V41_OFFLINE.progress.total?Math.round((V41_OFFLINE.progress.done/V41_OFFLINE.progress.total)*100):0; const cardOnline=all.flatMap(o=>(o.payments||[]).filter(p=>['Card','Online'].includes(p.method)&&p.verificationStatus!=='VERIFIED'));
+  c.innerHTML=`<div class="module-title"><div><h3>Sync Center</h3><p class="muted-note">Professional single-counter offline queue. Bills stay local until cloud confirms upload.</p></div><div class="actions-mini"><button class="primary-btn" id="syncNowV41" ${(!navigator.onLine||!rows.length||V41_OFFLINE.syncing)?'disabled':''}>Sync Now</button><button class="ghost-btn" id="exportOfflineV41">Export Emergency Backup</button></div></div>
+  <div class="sync-hero-card"><div><span class="status-dot ${navigator.onLine?'ok':'offline'}"></span><b>${navigator.onLine?'Internet Online':'Internet Offline'}</b><p>${rows.length?`${rows.length} bill(s) waiting for upload. Local data is not deleted before server confirmation.`:'No pending upload. Local queue clear.'}</p></div><div class="sync-progress-bar"><i style="width:${pct}%"></i></div><em>${esc(V41_OFFLINE.progress.message || 'Ready')}</em></div>
+  <div class="sync-status-grid"><div class="card metric"><p>Pending Upload</p><h3>${rows.length}</h3></div><div class="card metric"><p>Local Bills Stored</p><h3>${all.length}</h3></div><div class="card metric"><p>Card/Online Pending</p><h3>${cardOnline.length}</h3></div><div class="card metric"><p>Last Local Save</p><h3>${meta.at?new Date(meta.at).toLocaleTimeString():'—'}</h3></div></div>
+  <div class="card subcard"><h3>Pending Bills</h3><div class="report-table-wrap"><table class="admin-table"><thead><tr><th>Offline Ref</th><th>Status</th><th>Type</th><th>Items</th><th>Total</th><th>Payments</th><th>Saved</th></tr></thead><tbody>${rows.length?rows.map(o=>`<tr><td>${esc(o.offlineRef||o.number)}</td><td>${esc(o.syncStatus||o.status)}</td><td>${esc(formatType(o.type))}</td><td>${(o.lines||[]).reduce((sum,l)=>sum+Number(l.qty||0),0)}</td><td>${money(calcTotals(o).total)}</td><td>${esc((o.payments||[]).map(p=>`${p.method}${p.reference?' #'+p.reference:''}`).join(', ')||'Unpaid')}</td><td>${new Date(o.updatedAt||o.createdAt).toLocaleString()}</td></tr>`).join(''):'<tr><td colspan="7">No pending offline bills.</td></tr>'}</tbody></table></div></div>
+  <div class="card subcard"><h3>Safety & Stability</h3><div class="safety-list"><p>✓ Counter PC offline mode only</p><p>✓ Browser local queue + emergency export</p><p>✓ Server idempotency prevents duplicate uploads</p><p>✓ Card/Online selection saves even without real integration</p><p>✓ Reports work offline with clear unsynced warning</p><p>✓ Failed/conflict bills stay pending for retry</p></div></div>`;
+  $('#syncNowV41') && ($('#syncNowV41').onclick=()=>syncOfflineNowV41(true)); $('#exportOfflineV41') && ($('#exportOfflineV41').onclick=exportOfflineBackupV41);
+}
+
+
+
+/* ============================================================
+   SwiftTill V43 Complete Offline Safe Counter
+   - Card/Online are normal POS selections; references are optional
+   - local queue keeps dual browser copies + IndexedDB mirror + Counter Agent disk snapshots
+   - failed uploads stay pending; confirmed uploads are pruned safely to protect storage
+   - package is Defender-friendly: no exe, no registry/service install, no obfuscation
+============================================================ */
+const V43_SAFE_COUNTER_VERSION = '44.0.0-offline-auth-operational-safety';
+const V43_SAFE = {
+  indexedDbName: 'SwiftTillOfflineSafeCounterV43',
+  indexedDbStore: 'snapshots',
+  agentQueueKey: 'swifttill_agent_backup_queue_v43',
+  snapshotKey: 'swifttill_offline_snapshot_v43',
+  snapshotBackupKey: 'swifttill_offline_snapshot_backup_v43',
+  maxConfirmedKeep: 50
+};
+function checksumV43(text){ text=String(text||''); let a=2166136261>>>0; for(let i=0;i<text.length;i++){ a^=text.charCodeAt(i); a=Math.imul(a,16777619)>>>0; } return text.length+':'+a.toString(16); }
+function openIdbV43(){
+  return new Promise((resolve,reject)=>{
+    if(!('indexedDB' in window)) return resolve(null);
+    const req=indexedDB.open(V43_SAFE.indexedDbName,1);
+    req.onupgradeneeded=()=>{ const db=req.result; if(!db.objectStoreNames.contains(V43_SAFE.indexedDbStore)) db.createObjectStore(V43_SAFE.indexedDbStore,{keyPath:'id'}); };
+    req.onsuccess=()=>resolve(req.result); req.onerror=()=>reject(req.error||new Error('IndexedDB unavailable'));
+  });
+}
+async function idbPutV43(id, value){
+  const db=await openIdbV43(); if(!db) return false;
+  return new Promise((resolve,reject)=>{ const tx=db.transaction(V43_SAFE.indexedDbStore,'readwrite'); tx.objectStore(V43_SAFE.indexedDbStore).put({id, value, updatedAt:new Date().toISOString()}); tx.oncomplete=()=>resolve(true); tx.onerror=()=>reject(tx.error||new Error('IndexedDB write failed')); });
+}
+async function idbGetV43(id){
+  const db=await openIdbV43(); if(!db) return null;
+  return new Promise((resolve,reject)=>{ const tx=db.transaction(V43_SAFE.indexedDbStore,'readonly'); const req=tx.objectStore(V43_SAFE.indexedDbStore).get(id); req.onsuccess=()=>resolve(req.result?.value||null); req.onerror=()=>reject(req.error||new Error('IndexedDB read failed')); });
+}
+async function restoreOfflineFromIndexedDbV43(){
+  try{
+    const value=await idbGetV43('latest-orders');
+    if(value && (!localStorage.getItem(V41_OFFLINE.ordersKey) || Object.keys(localOrdersV41()).length===0)){
+      localStorage.setItem(V41_OFFLINE.ordersKey, JSON.stringify(value.orders||{}));
+      localStorage.setItem(V41_OFFLINE.backupOrdersKey, JSON.stringify(value.orders||{}));
+      localStorage.setItem(V41_OFFLINE.metaKey, JSON.stringify({ at:new Date().toISOString(), reason:'indexeddb-restore', deviceId:offlineDeviceId(), checksum:value.checksum||'' }));
+      return true;
+    }
+  }catch(e){ console.warn('SwiftTill IndexedDB restore skipped:', e.message); }
+  return false;
+}
+function agentBackupQueueV43(){ return safeJsonParseV41(localStorage.getItem(V43_SAFE.agentQueueKey), []); }
+function saveAgentBackupQueueV43(q){ try{ localStorage.setItem(V43_SAFE.agentQueueKey, JSON.stringify((q||[]).slice(-12))); }catch{} }
+async function flushAgentBackupQueueV43(){
+  const q=agentBackupQueueV43(); if(!q.length) return;
+  const url=(state?.settings?.localAgentUrl||'http://127.0.0.1:9721/print').replace('/print','/offline-backup');
+  const remain=[];
+  for(const payload of q){
+    try{ const r=await fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)}); if(!r.ok) throw new Error('agent backup failed '+r.status); }
+    catch(e){ remain.push(payload); }
+  }
+  saveAgentBackupQueueV43(remain);
+}
+function pruneConfirmedLocalOrdersV43(orders){
+  const entries=Object.entries(orders||{});
+  const pending=entries.filter(([_,o])=>!o.serverConfirmedAt && hasOrderLines(o));
+  const confirmed=entries.filter(([_,o])=>o.serverConfirmedAt || !hasOrderLines(o)).sort((a,b)=>new Date(b[1].serverConfirmedAt||b[1].updatedAt||b[1].createdAt||0)-new Date(a[1].serverConfirmedAt||a[1].updatedAt||a[1].createdAt||0)).slice(0,V43_SAFE.maxConfirmedKeep);
+  return Object.fromEntries([...pending,...confirmed]);
+}
+function saveLocalOrdersV41(orders, reason='save'){
+  const cleaned=pruneConfirmedLocalOrdersV43(orders||{});
+  const stamp=new Date().toISOString();
+  const payload=JSON.stringify(cleaned);
+  const sum=checksumV43(payload);
+  const meta={ at:stamp, reason, deviceId:offlineDeviceId(), orderCount:Object.keys(cleaned).length, pendingCount:Object.values(cleaned).filter(o=>!o.serverConfirmedAt && hasOrderLines(o)).length, checksum:sum, version:V43_SAFE_COUNTER_VERSION, lastPersistOk:false };
+  try{
+    localStorage.setItem(V41_OFFLINE.walKey, JSON.stringify(meta));
+    localStorage.setItem(V43_SAFE.snapshotBackupKey, localStorage.getItem(V43_SAFE.snapshotKey)||payload);
+    localStorage.setItem(V43_SAFE.snapshotKey, payload);
+    localStorage.setItem(V41_OFFLINE.backupOrdersKey, payload);
+    localStorage.setItem(V41_OFFLINE.ordersKey, payload);
+    const verify=localStorage.getItem(V41_OFFLINE.ordersKey)||'';
+    if(checksumV43(verify)!==sum) throw new Error('Local save verification failed');
+    meta.lastPersistOk=true;
+    localStorage.setItem(V41_OFFLINE.metaKey, JSON.stringify(meta));
+  }catch(e){
+    console.error('SwiftTill V43 local save failed:', e.message);
+    toast('Local save warning. Data mirror/agent backup will retry. Do not clear browser data.', true);
+  }
+  idbPutV43('latest-orders',{orders:cleaned,meta,checksum:sum}).catch(e=>console.warn('IndexedDB mirror failed:',e.message));
+  idbPutV43('snapshot-'+Date.now(),{orders:cleaned,meta,checksum:sum}).catch(()=>{});
+  const agentPayload={reason,deviceId:offlineDeviceId(),at:stamp,orders:cleaned,meta,checksum:sum,version:V43_SAFE_COUNTER_VERSION};
+  saveAgentBackupQueueV43([...agentBackupQueueV43(), agentPayload]);
+  scheduleAgentBackupV41(cleaned, reason);
+  flushAgentBackupQueueV43().catch(()=>{});
+}
+const __v43BaseBoot = boot;
+boot = async function(){ await restoreOfflineFromIndexedDbV43(); return __v43BaseBoot(); };
+const __v43BaseSyncOfflineNowV41 = syncOfflineNowV41;
+syncOfflineNowV41 = async function(manual=false){ await flushAgentBackupQueueV43().catch(()=>{}); const result=await __v43BaseSyncOfflineNowV41(manual); await flushAgentBackupQueueV43().catch(()=>{}); return result; };
+const __v43BaseBuildPaymentBadgeV42 = buildPaymentBadgeV42;
+buildPaymentBadgeV42 = function(){
+  const offline=isOfflineRuntimeV42();
+  return `<div class="pay-system-note ${offline?'offline':''}"><b>${offline?'Offline Payment Selection':'Payment Selection'}</b><span>${offline?'Cash, Card and Online selections are saved locally. No real gateway integration needed. Reference is optional.':'Cash, Card and Online are recorded for reports. Reference is optional.'}</span></div>`;
+};
+const __v43BaseRenderSyncCenterV41 = renderSyncCenterV41;
+renderSyncCenterV41 = function(c){
+  __v43BaseRenderSyncCenterV41(c);
+  if(!c) return;
+  const q=agentBackupQueueV43().length;
+  const meta=safeJsonParseV41(localStorage.getItem(V41_OFFLINE.metaKey),{});
+  const card=c.querySelector('.sync-hero-card');
+  if(card){ card.insertAdjacentHTML('beforeend', `<div class="sync-safe-strip"><b>Safe counter mode V43</b><span>Browser queue + IndexedDB mirror + Counter Agent disk backup. Agent backup queue: ${q}. Last verified save: ${meta.lastPersistOk?'OK':'Pending'}.</span></div>`); }
+  c.querySelectorAll('.safety-list p').forEach(p=>{ p.innerHTML=p.innerHTML.replace('Card/Online require reference before save','Card/Online selection saves; reference optional'); });
+};
+window.addEventListener('online',()=>flushAgentBackupQueueV43().catch(()=>{}));
+setInterval(()=>{ if(navigator.onLine) flushAgentBackupQueueV43().catch(()=>{}); },60000);
+
+
+
+/* ============================================================
+   SwiftTill V44 Offline Authentication + Operational Safety
+   - first login requires internet; after that the registered counter PC can unlock offline
+   - no plain password is stored; only salted WebCrypto hash per cached user
+   - offline role/permission snapshot protects admin/report access
+   - Sync Center gets auth/readiness/scenario controls and agent backup restore
+============================================================ */
+const V44_AUTH_VERSION = '44.0.0-offline-auth-operational-safety';
+const V44_AUTH = {
+  usersKey: 'swifttill_offline_auth_users_v44',
+  sessionKey: 'swifttill_offline_session_v44',
+  readinessKey: 'swifttill_offline_readiness_v44',
+  sessionHours: 12,
+  iterations: 120000
+};
+function v44Now(){ return new Date().toISOString(); }
+function v44Users(){ return safeJsonParseV41(localStorage.getItem(V44_AUTH.usersKey), {}); }
+function saveV44Users(users){ localStorage.setItem(V44_AUTH.usersKey, JSON.stringify(users || {})); }
+function v44Hex(buffer){ return Array.from(new Uint8Array(buffer)).map(b=>b.toString(16).padStart(2,'0')).join(''); }
+function v44Salt(){ const a=new Uint8Array(16); if(window.crypto?.getRandomValues) crypto.getRandomValues(a); else for(let i=0;i<a.length;i++) a[i]=Math.floor(Math.random()*256); return v44Hex(a); }
+async function v44HashPassword(password, salt){
+  const text = String(salt || '') + '|' + offlineDeviceId() + '|' + String(password || '');
+  if(window.crypto?.subtle){
+    const enc = new TextEncoder();
+    const key = await crypto.subtle.importKey('raw', enc.encode(String(password || '')), 'PBKDF2', false, ['deriveBits']);
+    const bits = await crypto.subtle.deriveBits({ name:'PBKDF2', salt:enc.encode(String(salt || '') + '|' + offlineDeviceId()), iterations:V44_AUTH.iterations, hash:'SHA-256' }, key, 256);
+    return v44Hex(bits);
+  }
+  let h=2166136261>>>0; for(let i=0;i<text.length;i++){ h^=text.charCodeAt(i); h=Math.imul(h,16777619)>>>0; }
+  return String(text.length)+':'+h.toString(16);
+}
+function v44Networkish(e){ return /Failed to fetch|NetworkError|Load failed|Internet connection required|fetch|offline|ERR_/i.test(e?.message || String(e || '')); }
+function v44AuthSummary(){
+  const users=Object.values(v44Users());
+  const session=safeJsonParseV41(localStorage.getItem(V44_AUTH.sessionKey), null);
+  return { cachedUsers:users.length, users, session, ready:Boolean(users.length && cachedStateV41() && isRegisteredCounterV41()) };
+}
+function v44OfflineSessionValid(){
+  const s=safeJsonParseV41(localStorage.getItem(V44_AUTH.sessionKey), null);
+  if(!s || !s.email || !s.expiresAt) return null;
+  if(new Date(s.expiresAt).getTime() < Date.now()) return null;
+  const rec=v44Users()[String(s.email).toLowerCase()];
+  return rec ? { ...s, record:rec } : null;
+}
+function v44ApplyOfflineUser(rec){
+  const cached=cachedStateV41();
+  if(!cached) throw new Error('No offline POS cache found. Login once with internet on this counter PC.');
+  state=mergeOfflineStateV41(cached);
+  state.user=rec.user || state.user;
+  state.permissions=Array.isArray(rec.permissions) ? rec.permissions : (state.permissions || []);
+  state.offlineAuth={ enabled:true, version:V44_AUTH_VERSION, email:rec.email, cachedAt:rec.cachedAt, lastOnlineAt:rec.lastOnlineAt, permissionSnapshot:true, mode:'cached-counter-auth' };
+  return state;
+}
+async function cacheOfflineAuthV44(email, password, loginUser){
+  if(!email || !password || isTouchMobileDeviceV41()) return false;
+  ensureCounterRegisteredV41();
+  if(!isRegisteredCounterV41()) return false;
+  const salt=v44Salt();
+  const hash=await v44HashPassword(password, salt);
+  const users=v44Users();
+  const key=String(email).trim().toLowerCase();
+  const userSnap=clone(state?.user || loginUser || { email:key, name:key });
+  const permSnap=clone(state?.permissions || []);
+  users[key]={
+    email:key,
+    name:userSnap.name || key,
+    user:userSnap,
+    permissions:permSnap,
+    salt,
+    hash,
+    iterations:V44_AUTH.iterations,
+    algorithm:window.crypto?.subtle?'PBKDF2-SHA256':'FNV1A-FALLBACK',
+    cachedAt:v44Now(),
+    lastOnlineAt:v44Now(),
+    deviceId:offlineDeviceId(),
+    stateRevision:state?.sync?.revision || null,
+    version:V44_AUTH_VERSION
+  };
+  saveV44Users(users);
+  localStorage.setItem(V44_AUTH.readinessKey, JSON.stringify({ at:v44Now(), ok:true, reason:'online-login-cached', email:key, deviceId:offlineDeviceId(), version:V44_AUTH_VERSION }));
+  return true;
+}
+async function offlineUnlockV44(email, password){
+  if(isTouchMobileDeviceV41()) throw new Error('Offline login is blocked on mobile/second devices. Use registered counter PC only.');
+  if(!isRegisteredCounterV41()) throw new Error('This PC is not registered for offline counter mode. Login once online on the counter PC.');
+  const key=String(email || '').trim().toLowerCase();
+  const users=v44Users();
+  const rec=users[key];
+  if(!rec) throw new Error('This user is not cached for offline login. Connect internet and login once first.');
+  const hash=await v44HashPassword(password, rec.salt);
+  if(hash !== rec.hash) throw new Error('Offline password is incorrect.');
+  const expiresAt=new Date(Date.now()+V44_AUTH.sessionHours*3600*1000).toISOString();
+  const offlineToken='offline-v44:'+key+':'+Date.now().toString(36);
+  localStorage.setItem(V44_AUTH.sessionKey, JSON.stringify({ email:key, userId:rec.user?.id || '', name:rec.name || key, startedAt:v44Now(), expiresAt, deviceId:offlineDeviceId(), version:V44_AUTH_VERSION }));
+  localStorage.setItem('swifttill_token', offlineToken);
+  token=offlineToken;
+  v44ApplyOfflineUser(rec);
+  renderShell();
+  startOfflineAutoSyncV41();
+  toast('Offline Counter unlocked. Data will sync when internet returns.');
+}
+function lockOfflineSessionV44(){ localStorage.removeItem(V44_AUTH.sessionKey); if(String(token||'').startsWith('offline-v44:')){ localStorage.removeItem('swifttill_token'); token=''; } toast('Offline session locked.'); renderLogin(); }
+function offlineLoginReadyV44(){ const a=v44AuthSummary(); return Boolean(a.ready && a.cachedUsers>0); }
+
+const __v44BaseRenderLogin = renderLogin;
+renderLogin = function(){
+  const auth=v44AuthSummary();
+  const offlineMode=!navigator.onLine;
+  const ready=offlineLoginReadyV44();
+  const users=auth.users.map(u=>u.email);
+  const defaultEmail=users[0] || '';
+  app.innerHTML = `<div class="login-screen v30-login-screen v44-login-screen">
+    <div class="login-watermark">${productBrandMark()}</div>
+    <form class="login-card v30-login-card" id="loginForm">
+      <div class="login-brand-visual">${productBrandMark()}<b>SwiftTill</b><span>${offlineMode?'Offline Counter':'Cloud POS'}</span></div>
+      <h1>${offlineMode?'Offline Counter Unlock':'Login'}</h1>
+      <p>${offlineMode ? (ready?'Internet unavailable. Unlock with a user that was already verified online on this counter PC.':'Internet unavailable. First login must be online before offline use.') : 'Login online once to refresh the secure offline counter cache.'}</p>
+      <div class="field"><label>Email</label><input name="email" autocomplete="username" value="${esc(defaultEmail)}" ${offlineMode&&users.length===1?'readonly':''}></div>
+      <div class="field"><label>Password</label><input name="password" type="password" autocomplete="current-password"></div>
+      <button class="primary-btn" style="width:100%">${offlineMode?'Unlock Offline':'Login'}</button>
+      <div class="offline-auth-note ${ready?'ok':'warn'}"><b>${ready?'Offline ready on this counter PC':'Offline auth not ready'}</b><span>${ready?`${auth.cachedUsers} cached user(s). No plain password stored.`:'Connect internet and login once on this PC. Mobile/second devices remain online-only.'}</span></div>
+      ${offlineMode?'<button type="button" class="ghost-btn full-width-btn mt" id="retryOnlineV44">Retry Internet Login</button>':''}
+    </form>
+  </div>`;
+  $('#loginForm').addEventListener('submit', async e => {
+    e.preventDefault();
+    const f = new FormData(e.target); const body = Object.fromEntries(f); const email=String(body.email||'').trim(); const password=String(body.password||'');
+    try{
+      if(!navigator.onLine){ await offlineUnlockV44(email,password); return; }
+      const j = await api('/api/login', body);
+      token = j.token; localStorage.setItem('swifttill_token', token);
+      await boot();
+      await cacheOfflineAuthV44(email,password,j.user).catch(err=>console.warn('Offline auth cache skipped:',err.message));
+      if(state) saveStateCacheV41(state);
+    }catch(err){
+      if(v44Networkish(err) && ready){ try{ await offlineUnlockV44(email,password); return; }catch(offErr){ toast(offErr.message,true); return; } }
+      toast(err.message,true);
+    }
+  });
+  const retry=$('#retryOnlineV44'); if(retry) retry.onclick=()=>location.reload();
+};
+
+const __v44BaseBoot = boot;
+boot = async function(){
+  if(!navigator.onLine && isRegisteredCounterV41()){
+    const sess=v44OfflineSessionValid();
+    if(sess){ try{ v44ApplyOfflineUser(sess.record); renderShell(); startOfflineAutoSyncV41(); return; }catch(e){ renderLogin(); return; } }
+    return renderLogin();
+  }
+  if(!token) return renderLogin();
+  try{ await loadState(); renderShell(); startOfflineAutoSyncV41(); }
+  catch(e){
+    if(!navigator.onLine || v44Networkish(e)){
+      const sess=v44OfflineSessionValid();
+      if(sess){ try{ v44ApplyOfflineUser(sess.record); renderShell(); startOfflineAutoSyncV41(); toast('Offline Counter Mode: authenticated locally; sync when internet returns.', true); return; }catch{} }
+    }
+    const cached=cachedStateV41();
+    if(cached && isRegisteredCounterV41() && v44OfflineSessionValid()){ state=mergeOfflineStateV41(cached); renderShell(); startOfflineAutoSyncV41(); toast('Offline Counter Mode: local data safe; sync when internet returns.', true); }
+    else { renderLogin(); }
+  }
+};
+
+const __v44BaseCanHandleOfflineApiV41 = canHandleOfflineApiV41;
+canHandleOfflineApiV41 = function(path, method){
+  if(method==='GET' && path==='/api/ops/scenarios') return true;
+  return __v44BaseCanHandleOfflineApiV41(path, method);
+};
+function operationalScenarioMatrixV44Local(){
+  const auth=v44AuthSummary();
+  const meta=safeJsonParseV41(localStorage.getItem(V41_OFFLINE.metaKey),{});
+  const pending=pendingOfflineOrdersV41().length;
+  return { ok:true, version:V44_AUTH_VERSION, mode:navigator.onLine?'online-or-cached':'offline-counter', readiness:{ counterPc:isRegisteredCounterV41(), offlineAuthReady:auth.ready, cachedUsers:auth.cachedUsers, pendingUpload:pending, lastLocalSave:meta.at || '', agentBackupQueue:agentBackupQueueV43().length }, scenarios:[
+    { scenario:'First setup / first login', protection:'Server authentication is required once. Offline mode is not allowed until this counter PC has cached POS data and a salted password hash.', action:'Connect internet, login, open POS once, then offline mode is ready.' },
+    { scenario:'Regular offline login', protection:'Cashier enters the same password; browser verifies salted PBKDF2 hash locally. Plain password is never saved.', action:'Use Offline Counter Unlock on registered PC.' },
+    { scenario:'Wrong user/password offline', protection:'Unknown users and wrong passwords are blocked because no server verification is available offline.', action:'Use a cached account or reconnect internet.' },
+    { scenario:'Role/permission offline', protection:'Last-known permission snapshot controls Admin, Reports and POS buttons offline.', action:'Update roles online, then login again on counter PC to refresh offline cache.' },
+    { scenario:'Mobile/second device offline', protection:'Offline billing is blocked outside registered counter PC.', action:'Reconnect internet or use main counter PC.' },
+    { scenario:'Power cut / PC shutdown mid-order', protection:'Every bill change is written to localStorage, backup copy, IndexedDB and Counter Agent disk snapshot.', action:'Restart PC, unlock offline, continue from Open Bills or Sync Center.' },
+    { scenario:'One month no internet', protection:'Pending bills remain local; server idempotency prevents duplicate upload later.', action:'Do not clear browser data or agent folder; use Sync Now when internet returns.' },
+    { scenario:'Browser data cleared', protection:'Counter Agent stores dated offline backup files outside browser storage.', action:'Use Restore from Agent Backup in Sync Center, then Sync Now.' },
+    { scenario:'Cash/Card/Online offline payment', protection:'All are POS selections; cash change is calculated; card/online extra is blocked. References remain optional.', action:'Select payment method and sync later.' },
+    { scenario:'Offline reports', protection:'Reports include cached cloud sales + unsynced local sales with warning banner.', action:'Use final cloud report after sync for official closeout.' },
+    { scenario:'Duplicate Sync Now click', protection:'Sync lock + idempotent offline keys prevent duplicate cloud bills.', action:'Wait for progress to complete.' },
+    { scenario:'Printer disconnected', protection:'Receipt stays in print spool and order remains saved.', action:'Reconnect printer and retry failed prints.' },
+    { scenario:'Local storage warning/full', protection:'Verified save shows warning and emergency export stays available.', action:'Export backup and free disk space before rush-hour billing.' }
+  ] };
+}
+const __v44BaseOfflineApiV41 = offlineApiV41;
+offlineApiV41 = async function(path, data, method='POST'){
+  const cleanPath=String(path).split('?')[0];
+  if(method==='GET' && cleanPath==='/api/ops/scenarios') return operationalScenarioMatrixV44Local();
+  return __v44BaseOfflineApiV41(path, data, method);
+};
+
+async function restoreFromAgentBackupV44(){
+  const url=(state?.settings?.localAgentUrl||'http://127.0.0.1:9721/print').replace('/print','/offline-backups/latest');
+  try{
+    const res=await fetch(url,{method:'GET'});
+    const out=await res.json().catch(()=>({ok:false,error:'Invalid agent response'}));
+    if(!res.ok || out.ok===false || !out.backup) throw new Error(out.error || 'No agent backup found');
+    const backup=out.backup;
+    const incoming=backup.orders || backup.value?.orders || {};
+    if(!incoming || typeof incoming!=='object' || !Object.keys(incoming).length) throw new Error('Agent backup has no orders');
+    const merged={...localOrdersV41(), ...incoming};
+    saveLocalOrdersV41(merged,'agent-backup-restore');
+    if(backup.state && !cachedStateV41()) saveStateCacheV41(backup.state);
+    await restoreOfflineFromIndexedDbV43().catch(()=>{});
+    if(adminTab==='sync') renderAdminContent();
+    updateOfflineDockV41();
+    toast(`Restored ${Object.keys(incoming).length} order record(s) from Counter Agent backup.`);
+  }catch(e){ toast('Restore failed: '+(e.message||'Counter Agent unavailable'), true); }
+}
+function testOfflineReadinessV44(){
+  const auth=v44AuthSummary(); const meta=safeJsonParseV41(localStorage.getItem(V41_OFFLINE.metaKey),{});
+  const checks=[
+    ['Registered counter PC', isRegisteredCounterV41()],
+    ['Cached POS state', Boolean(cachedStateV41())],
+    ['Offline auth user cache', auth.cachedUsers>0],
+    ['Local queue readable', Boolean(localOrdersV41())],
+    ['Last verified local save', meta.lastPersistOk!==false],
+    ['Mobile blocked offline', !isTouchMobileDeviceV41()]
+  ];
+  const ok=checks.every(x=>x[1]);
+  localStorage.setItem(V44_AUTH.readinessKey, JSON.stringify({ at:v44Now(), ok, checks, deviceId:offlineDeviceId(), version:V44_AUTH_VERSION }));
+  toast(ok?'Offline readiness check passed.':'Offline readiness has warnings. Check Sync Center.', !ok);
+  if(adminTab==='sync') renderAdminContent();
+}
+const __v44BaseRenderSyncCenterV41 = renderSyncCenterV41;
+renderSyncCenterV41 = function(c){
+  __v44BaseRenderSyncCenterV41(c);
+  if(!c) return;
+  const auth=v44AuthSummary();
+  const session=v44OfflineSessionValid();
+  const readiness=safeJsonParseV41(localStorage.getItem(V44_AUTH.readinessKey), null);
+  const sc=operationalScenarioMatrixV44Local();
+  const authCard=document.createElement('div');
+  authCard.className='grid2 v44-sync-extra';
+  authCard.innerHTML=`<div class="card subcard"><h3>Offline Authentication</h3><div class="safety-list"><p>✓ First login requires internet</p><p>✓ Cached users: <b>${auth.cachedUsers}</b></p><p>✓ Password stored: <b>Never</b></p><p>✓ Local hash: <b>PBKDF2/Salted</b></p><p>✓ Permission snapshot: <b>Enabled</b></p><p>✓ Session: <b>${session?'Unlocked until '+new Date(session.expiresAt).toLocaleTimeString():'Locked / online'}</b></p></div><div class="actions-mini mt"><button class="ghost-btn" id="testOfflineReadyV44">Test Offline Readiness</button><button class="danger-btn" id="lockOfflineV44">Lock Offline Session</button></div></div>
+  <div class="card subcard"><h3>Recovery Tools</h3><p class="muted-note">Use only if browser storage was cleared or you need to recover a dated Counter Agent backup.</p><div class="actions-mini"><button class="ghost-btn" id="restoreAgentBackupV44">Restore from Counter Agent Backup</button><button class="ghost-btn" id="refreshScenariosV44">Refresh Scenario Matrix</button></div><p class="muted-note">Last readiness check: ${readiness?.at?new Date(readiness.at).toLocaleString():'Not checked yet'} ${readiness?.ok===false?'⚠ warnings':''}</p></div>`;
+  c.appendChild(authCard);
+  const scenario=document.createElement('div');
+  scenario.className='card subcard v44-scenario-card';
+  scenario.innerHTML=`<h3>Operational Scenario Guards</h3><div class="report-table-wrap"><table class="admin-table"><thead><tr><th>Scenario</th><th>Protection</th><th>Action</th></tr></thead><tbody>${sc.scenarios.map(s=>`<tr><td>${esc(s.scenario)}</td><td>${esc(s.protection)}</td><td>${esc(s.action)}</td></tr>`).join('')}</tbody></table></div>`;
+  c.appendChild(scenario);
+  $('#testOfflineReadyV44') && ($('#testOfflineReadyV44').onclick=testOfflineReadinessV44);
+  $('#lockOfflineV44') && ($('#lockOfflineV44').onclick=lockOfflineSessionV44);
+  $('#restoreAgentBackupV44') && ($('#restoreAgentBackupV44').onclick=restoreFromAgentBackupV44);
+  $('#refreshScenariosV44') && ($('#refreshScenariosV44').onclick=()=>renderSyncCenterV41(c));
+};
+
+const __v44BaseSaveStateCacheV41 = saveStateCacheV41;
+saveStateCacheV41 = function(data){
+  if(data?.user && data?.permissions){
+    try{ data.offlineAuth={...(data.offlineAuth||{}), cachedUsers:v44AuthSummary().cachedUsers, firstOnlineLoginRequired:true, permissionSnapshot:true, version:V44_AUTH_VERSION}; }catch{}
+  }
+  return __v44BaseSaveStateCacheV41(data);
+};
+window.addEventListener('online',()=>{ const s=v44OfflineSessionValid(); if(s && token && !String(token).startsWith('offline-v44:')) localStorage.removeItem(V44_AUTH.sessionKey); });
+
 boot();

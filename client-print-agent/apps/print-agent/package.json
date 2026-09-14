@@ -1,11 +1,11 @@
 {
   "name": "@swifttill/print-agent",
-  "version": "40.0.0",
+  "version": "44.0.0",
   "private": true,
   "main": "agent.js",
   "scripts": {
     "start": "node agent.js",
     "check": "node --check agent.js"
   },
-  "description": "SwiftTill POS Windows print agent with cloud queue polling, diagnostics, spooling and retry support."
+  "description": "SwiftTill POS V44 Windows counter agent with cloud queue polling, diagnostics, spooling, retry and offline backup restore."
 }

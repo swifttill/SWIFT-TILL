@@ -4,21 +4,21 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>SwiftTill POS</title>
-  <meta name="description" content="SwiftTill POS online food billing system with responsive POS, admin, reports and thermal receipt workflow." />
+  <meta name="description" content="SwiftTill POS with single-counter offline billing, manual sync center, reports and thermal receipt workflow." />
   <meta name="theme-color" content="#076bff" />
-  <link rel="icon" href="/favicon.ico?v=36" sizes="any" />
-  <link rel="icon" type="image/png" sizes="16x16" href="/assets/img/favicon-16.png?v=36" />
-  <link rel="icon" type="image/png" sizes="32x32" href="/assets/img/favicon-32.png?v=36" />
-  <link rel="icon" type="image/png" sizes="48x48" href="/assets/img/favicon-48.png?v=36" />
-  <link rel="icon" type="image/png" sizes="64x64" href="/assets/img/favicon-64.png?v=36" />
-  <link rel="apple-touch-icon" href="/assets/img/apple-touch-icon.png?v=36" />
-  <link rel="manifest" href="/manifest.webmanifest?v=36" />
-  <link rel="stylesheet" href="/assets/css/styles.css" />
+  <link rel="icon" href="/favicon.ico?v=43" sizes="any" />
+  <link rel="icon" type="image/png" sizes="16x16" href="/assets/img/favicon-16.png?v=43" />
+  <link rel="icon" type="image/png" sizes="32x32" href="/assets/img/favicon-32.png?v=43" />
+  <link rel="icon" type="image/png" sizes="48x48" href="/assets/img/favicon-48.png?v=43" />
+  <link rel="icon" type="image/png" sizes="64x64" href="/assets/img/favicon-64.png?v=43" />
+  <link rel="apple-touch-icon" href="/assets/img/apple-touch-icon.png?v=43" />
+  <link rel="manifest" href="/manifest.webmanifest?v=43" />
+  <link rel="stylesheet" href="/assets/css/styles.css?v=43" />
 </head>
 <body>
   <div id="app"></div>
   <div id="toast" aria-live="polite"></div>
-  <script src="/assets/js/app.js"></script>
-  <script>if ('serviceWorker' in navigator) navigator.serviceWorker.getRegistrations().then(r=>r.forEach(x=>x.unregister())).catch(()=>{}); if (window.caches) caches.keys().then(k=>k.forEach(x=>caches.delete(x))).catch(()=>{});</script>
+  <script src="/assets/js/app.js?v=43"></script>
+  <script>if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js?v=43').catch(()=>{});</script>
 </body>
 </html>

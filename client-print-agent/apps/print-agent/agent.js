@@ -11,7 +11,8 @@ const SPOOL = path.join(STORAGE, 'print-spool');
 const PRINTED = path.join(SPOOL, 'printed');
 const FAILED = path.join(SPOOL, 'failed');
 const LOG_DIR = path.join(STORAGE, 'print-logs');
-const VERSION = '40.0.0-print-module-99-final';
+const OFFLINE_BACKUPS = path.join(STORAGE, 'offline-backups');
+const VERSION = '44.0.0-offline-auth-safe-counter-agent';
 
 function ensureDir(p){ if(!fs.existsSync(p)) fs.mkdirSync(p,{recursive:true}); }
 function loadConfig(){
@@ -36,17 +37,24 @@ let lastError = '';
 let printedCount = 0;
 let failedCount = 0;
 
-ensureDir(SPOOL); ensureDir(PRINTED); ensureDir(FAILED); ensureDir(LOG_DIR);
+ensureDir(SPOOL); ensureDir(PRINTED); ensureDir(FAILED); ensureDir(LOG_DIR); ensureDir(OFFLINE_BACKUPS);
 
 function log(line){
   const msg = `[${new Date().toISOString()}] ${line}`;
   console.log(msg);
   try { fs.appendFileSync(path.join(LOG_DIR, 'agent.log'), msg + os.EOL, 'utf8'); } catch {}
 }
+function corsOrigin(res){
+  const origin = String(res.__origin || '').replace(/\/$/, '');
+  const allowed = new Set([CLOUD_URL, 'http://127.0.0.1:'+PORT, 'http://localhost:'+PORT, 'http://127.0.0.1:8080', 'http://localhost:8080']);
+  if(!origin) return '*';
+  return allowed.has(origin) ? origin : 'http://127.0.0.1:'+PORT;
+}
 function json(res, status, data){
   res.writeHead(status, {
     'Content-Type':'application/json; charset=utf-8',
-    'Access-Control-Allow-Origin':'*',
+    'Access-Control-Allow-Origin':corsOrigin(res),
+    'Vary':'Origin',
     'Access-Control-Allow-Methods':'GET,POST,OPTIONS',
     'Access-Control-Allow-Headers':'Content-Type,Authorization,X-Print-Agent-Key'
   });
@@ -57,7 +65,7 @@ function readBody(req){
 }
 function execPs(script, timeout=12000){
   return new Promise((resolve,reject)=>{
-    execFile('powershell.exe', ['-NoProfile','-ExecutionPolicy','Bypass','-Command', script], { windowsHide:true, timeout }, (err, stdout, stderr)=>{
+    execFile('powershell.exe', ['-NoProfile','-NonInteractive','-Command', script], { windowsHide:true, timeout }, (err, stdout, stderr)=>{
       if(err) return reject(new Error((stderr || err.message || '').trim() || 'PowerShell failed'));
       resolve(String(stdout || '').trim());
     });
@@ -216,6 +224,49 @@ async function pollCloudQueue(){
   }catch(e){ lastError = e.message; log('Cloud print queue unavailable: ' + e.message); }
   finally { polling = false; }
 }
+
+function checksum(text){ text=String(text||''); let a=2166136261>>>0; for(let i=0;i<text.length;i++){ a^=text.charCodeAt(i); a=Math.imul(a,16777619)>>>0; } return text.length+':'+a.toString(16); }
+function writeOfflineBackup(payload={}){
+  const day = new Date().toISOString().slice(0,10);
+  const dir = path.join(OFFLINE_BACKUPS, day);
+  ensureDir(dir);
+  const stamp = new Date().toISOString().replace(/[:.]/g,'-');
+  const device = String(payload.deviceId || 'counter').replace(/[^a-z0-9_-]/gi,'-').slice(0,50);
+  const base = `${device}-${stamp}`;
+  const file = path.join(dir, `${base}.json`);
+  const tmp = file + '.tmp';
+  const backup = { app:'SwiftTill POS', type:'offline-local-backup', agentVersion:VERSION, savedAt:new Date().toISOString(), safeMode:true, ...payload };
+  const body = JSON.stringify(backup, null, 2);
+  backup.agentChecksum = checksum(body);
+  const finalBody = JSON.stringify(backup, null, 2);
+  fs.writeFileSync(tmp, finalBody, 'utf8');
+  fs.renameSync(tmp, file);
+  fs.writeFileSync(path.join(dir, `${device}-latest.json.tmp`), finalBody, 'utf8');
+  fs.renameSync(path.join(dir, `${device}-latest.json.tmp`), path.join(dir, `${device}-latest.json`));
+  fs.appendFileSync(path.join(OFFLINE_BACKUPS, 'offline-ledger.ndjson'), JSON.stringify({ file, savedAt:backup.savedAt, device, bytes:Buffer.byteLength(finalBody), checksum:backup.agentChecksum, reason:payload.reason || '' }) + os.EOL, 'utf8');
+  return { ok:true, file, bytes:Buffer.byteLength(finalBody), checksum:backup.agentChecksum, backupRoot:OFFLINE_BACKUPS, latest:path.join(dir, `${device}-latest.json`) };
+}
+
+
+function latestOfflineBackup(){
+  const ledger = path.join(OFFLINE_BACKUPS, 'offline-ledger.ndjson');
+  const candidates = [];
+  try{
+    if(fs.existsSync(ledger)){
+      const lines = fs.readFileSync(ledger,'utf8').trim().split(/\r?\n/).filter(Boolean).slice(-200).reverse();
+      for(const line of lines){ try{ const rec=JSON.parse(line); if(rec.file && fs.existsSync(rec.file)) candidates.push(rec.file); }catch{} }
+    }
+    const days = fs.readdirSync(OFFLINE_BACKUPS).filter(d=>/^\d{4}-\d{2}-\d{2}$/.test(d)).sort().reverse();
+    for(const day of days){
+      const dir = path.join(OFFLINE_BACKUPS, day);
+      for(const f of fs.readdirSync(dir).filter(x=>x.endsWith('-latest.json') || x.endsWith('.json')).sort().reverse()) candidates.push(path.join(dir,f));
+    }
+  }catch{}
+  const file = candidates.find(Boolean);
+  if(!file) return null;
+  try{ return { file, backup:JSON.parse(fs.readFileSync(file,'utf8')) }; }catch{return { file, error:'Backup file could not be parsed' };}
+}
+
 function countFiles(dir){ try { return fs.readdirSync(dir).filter(f=>fs.statSync(path.join(dir,f)).isFile()).length; } catch { return 0; } }
 async function health(){
   const printers = await printerList();
@@ -234,10 +285,11 @@ async function health(){
     lastPollAt,
     lastError,
     printer:{ configuredName:PRINTER_NAME || '', defaultPrinter:def, detected:Boolean(def), count:printers.length, printers },
-    spool:{ path:SPOOL, pending:countFiles(SPOOL), printed:countFiles(PRINTED), failed:countFiles(FAILED), printedCount, failedCount }
+    spool:{ path:SPOOL, pending:countFiles(SPOOL), printed:countFiles(PRINTED), failed:countFiles(FAILED), printedCount, failedCount }, offlineBackups:{ path:OFFLINE_BACKUPS, days:fs.existsSync(OFFLINE_BACKUPS)?fs.readdirSync(OFFLINE_BACKUPS).length:0 }
   };
 }
 async function handle(req,res){
+  res.__origin = req.headers.origin || '';
   if(req.method==='OPTIONS') return json(res,204,{});
   if(req.url==='/health' && req.method==='GET') return json(res,200, await health());
   if(req.url==='/printers' && req.method==='GET') return json(res,200, { ok:true, printers:await printerList(), defaultPrinter:await defaultPrinter() });
@@ -249,6 +301,21 @@ async function handle(req,res){
     const body = await readBody(req);
     const result = await printPayload(body);
     return json(res,result.ok?200:500,result);
+  }
+  if(req.url==='/offline-backup' && req.method==='POST'){
+    const body = await readBody(req);
+    const result = writeOfflineBackup(body);
+    return json(res,200,result);
+  }
+  if(req.url==='/offline-backups/latest' && req.method==='GET'){
+    const latest = latestOfflineBackup();
+    if(!latest) return json(res,404,{ ok:false, error:'No offline backup found' });
+    if(latest.error) return json(res,500,{ ok:false, error:latest.error, file:latest.file });
+    return json(res,200,{ ok:true, file:latest.file, backup:latest.backup });
+  }
+  if(req.url==='/offline-backups/status' && req.method==='GET'){
+    const latest = latestOfflineBackup();
+    return json(res,200,{ ok:true, path:OFFLINE_BACKUPS, latestFile:latest?.file || '', hasBackup:Boolean(latest?.backup) });
   }
   if(req.url==='/retry-spool' && req.method==='POST'){
     const files = fs.readdirSync(FAILED).filter(f=>f.endsWith('.txt')).slice(0,10);
@@ -262,7 +329,7 @@ async function handle(req,res){
   }
   return json(res,404,{ ok:false, error:'Not found' });
 }
-http.createServer((req,res)=>handle(req,res).catch(e=>json(res,500,{ok:false,error:e.message}))).listen(PORT,()=>{
+http.createServer((req,res)=>handle(req,res).catch(e=>json(res,500,{ok:false,error:e.message}))).listen(PORT,'127.0.0.1',()=>{
   log(`SwiftTill Print Agent ${VERSION}: http://127.0.0.1:${PORT}/health`);
   log(`Cloud POS: ${CLOUD_URL}`);
   log(`Mode: ${MODE}; Printer: ${PRINTER_NAME || 'Windows default printer'}`);

@@ -1,8 +1,8 @@
 {
   "name": "swifttill-print-agent-client-final",
-  "version": "40.0.0",
+  "version": "44.0.0",
   "private": true,
-  "description": "SwiftTill POS final client print agent for restaurant counter PC.",
+  "description": "SwiftTill POS V44 safe counter agent for local printing, offline backups and recovery restore.",
   "scripts": {
     "start": "node apps/print-agent/agent.js"
   },

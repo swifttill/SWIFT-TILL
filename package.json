@@ -1,8 +1,8 @@
 {
   "name": "swifttill-pos-monorepo",
-  "version": "40.0.0",
+  "version": "44.0.0",
   "private": true,
-  "description": "SwiftTill POS V40: printer module 99% hardening and final client print-agent package.",
+  "description": "SwiftTill POS V44 offline authentication and operational safety hardening",
   "workspaces": [
     "apps/api",
     "apps/web",
