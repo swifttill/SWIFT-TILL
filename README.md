@@ -1,3 +1,7 @@
+# SwiftTill POS V54 — One-Line Bill Actions
+
+This package keeps V53 functionality and fixes the current bill action bar so Print, Move, Split and Void are always kept on one professional horizontal row in the bill panel. Offline modules remain removed; online-only mode is preserved.
+
 # SwiftTill POS V53 - Filters, Sorting, Open Order Void/Cancel Access
 
 V53 adds Paid Orders search/date range/type/payment/sort filters, Open Orders search/date range/type/sort filters, and authorized POS open order void/cancel with permission/PIN/password approval. Online-only mode remains active; offline concept is not included.

@@ -2588,12 +2588,15 @@ renderBill = function(){
   __v53BaseRenderBill();
   if(currentOrder && hasOrderLines(currentOrder)){
     const row=document.querySelector('.bill-quick-actions');
+    if(row){ row.classList.add('v54-bill-action-bar'); }
     if(row && !row.querySelector('#voidCurrentOrderBtn')){
       const btn=document.createElement('button');
-      btn.className='danger-btn mini-action';
+      btn.className='danger-btn mini-action void-mini';
       btn.id='voidCurrentOrderBtn';
       btn.type='button';
-      btn.textContent='Void / Cancel';
+      btn.innerHTML='<span>Void</span><span class="v54-cancel-word"> / Cancel</span>';
+      btn.setAttribute('aria-label','Void / Cancel Bill');
+      btn.title='Void / Cancel Bill';
       btn.onclick=()=>openVoidOrderModal(currentOrder.id);
       row.appendChild(btn);
     }
