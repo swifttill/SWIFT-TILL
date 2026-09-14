@@ -1,4 +1,6 @@
-# SwiftTill POS — V48 Tender Close Day Reports
+# SwiftTill POS — V49 Professional Business Day Language
+
+V49 cleans client-facing Business Day/Open Day/Close Day copy, removes Roman Urdu from production UI, and keeps V48 tender close-day reporting rules. Offline concept remains removed.
 
 V48 keeps the system online-only and improves Day Close and reports:
 

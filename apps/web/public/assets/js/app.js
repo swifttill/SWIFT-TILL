@@ -1216,7 +1216,7 @@ function renderReports(ws){
     const takerOptions=(state.orderTakers||[]).map(t=>`<option value="${esc(t.id)}">${esc(t.name)}</option>`).join('');
     const shiftOptions=(state.shifts||[]).map(s=>`<option value="${esc(s.id)}">#${s.number} ${esc(s.status||'')}</option>`).join('');
     ws.innerHTML=`<div class="report-page admin-report-shell pro-report-screen qb-report-module v34-report-page">
-      <div class="module-title v34-report-title"><div><h3>${esc(currentReportTitle())}</h3><p class="muted-note">Reports submenu left sidebar mein hai. Screen view rich hai; PDF/A4 aur Thermal print alag professional templates hain.</p></div><div class="actions-mini"><button class="ghost-btn" id="exportReport" disabled>Export Excel</button><button class="ghost-btn" id="printReportPdfBtn" disabled>PDF / A4</button><button class="primary-btn" id="printReportThermalBtn" disabled>Thermal Print</button></div></div>
+      <div class="module-title v34-report-title"><div><h3>${esc(currentReportTitle())}</h3><p class="muted-note">Use the report menu to review sales, tenders, items and close-day summaries. A4/PDF and Thermal prints use separate compact templates.</p></div><div class="actions-mini"><button class="ghost-btn" id="exportReport" disabled>Export Excel</button><button class="ghost-btn" id="printReportPdfBtn" disabled>PDF / A4</button><button class="primary-btn" id="printReportThermalBtn" disabled>Thermal Print</button></div></div>
       <div class="report-work card subcard v34-report-work">
         <div class="report-headline branded-report-headline"><div class="brand-report-name">${v34OrgLogoImg('report-org-logo screen-logo')}<div><h3 id="reportTitle">${esc(currentReportTitle())}</h3><span>${esc(state.settings?.businessName||'SwiftTill POS')}</span></div></div></div>
         <div class="report-filter-grid compact-filters" id="reportFilters">
@@ -1605,14 +1605,16 @@ function v46TodayKey(){ const d=new Date(); d.setMinutes(d.getMinutes()-d.getTim
 function v46Day(){ return state?.activeShift || state?.businessDay?.activeDay || null; }
 function v46DayLabel(day=v46Day()){
   if(!day) return 'No Day Open';
-  return `Day #${day.number || ''} • ${day.businessDate || (day.openedAt?new Date(day.openedAt).toLocaleDateString('en-CA'):'')} • ${day.status || 'OPEN'}`;
+  const dateText = day.businessDate || (day.openedAt ? new Date(day.openedAt).toLocaleDateString('en-CA') : '');
+  const statusText = String(day.status || 'OPEN').toLowerCase().replace(/^./, c => c.toUpperCase());
+  return `Business Day ${day.number || ''} · ${dateText} · ${statusText}`;
 }
-function v46RequireDay(){ if(v46Day()) return true; toast('Open Day first. Billing is locked until day is opened.', true); return false; }
+function v46RequireDay(){ if(v46Day()) return true; toast('Open Business Day first. Billing is locked until the day is opened.', true); return false; }
 const __v46BaseSetupBanner = setupBanner;
 setupBanner = function(){
   const old = __v46BaseSetupBanner ? __v46BaseSetupBanner() : '';
   if(v46Day()) return old;
-  return old + `<div class="setup-banner day-lock-banner"><div><b>Day is not open</b><p>Open Day is required before New Order, Hold, Payment and sales reports. This keeps after-midnight restaurant sale in the correct business day.</p></div><button class="primary-btn" onclick="openOpenShift()">Open Day</button></div>`;
+  return old + `<div class="setup-banner day-lock-banner"><div><b>Business day is not open</b><p>Open a business day before starting orders, holding bills, taking payments, or reviewing sales reports. This keeps after-midnight sales under the correct restaurant day.</p></div><button class="primary-btn" onclick="openOpenShift()">Open Business Day</button></div>`;
 };
 renderTopbar = function(){
   const d = new Date(); const active = v46Day(); const s = state.settings || {};
@@ -1624,7 +1626,7 @@ renderTopbar = function(){
     <div class="top-pill user-pill">👤 <span><b>${esc(state.user.name)}</b>${esc(state.user.roles.join(', ') || 'User')}</span></div>
     <div class="top-pill branch-pill ${active?'day-open':'day-closed'}"><span class="status-dot"></span><span><b>${esc(s.branchName || 'Main Branch')}</b>${esc(v46DayLabel(active))}</span></div>
     ${back}
-    <button class="ghost-btn shift-action ${active?'close-day-btn':'open-day-btn'}" id="shiftBtn">${active?'Close Day':'Open Day'}</button>
+    <button class="ghost-btn shift-action ${active?'close-day-btn':'open-day-btn'}" id="shiftBtn">${active?'Close Business Day':'Open Business Day'}</button>
     <button class="ghost-btn logout-action" id="logoutBtn">Logout</button>
   </div>`;
 };
@@ -1633,7 +1635,7 @@ renderSidebar = function(){
   const brand = logo ? `<img src="${esc(logo)}" alt="${esc(state?.settings?.businessName || 'SwiftTill POS')}">` : `<div class="brand-text"><b>SwiftTill</b><span>POS</span></div>`;
   const locked = !v46Day();
   return `<div class="brand">${brand}</div>
-  <button class="new-order ${locked?'locked':''}" id="newOrderBtn" ${locked?'disabled title="Open Day first"':''}>＋ New Order</button>
+  <button class="new-order ${locked?'locked':''}" id="newOrderBtn" ${locked?'disabled title="Open Business Day first"':''}>＋ New Order</button>
   <div class="search"><span>⌕</span><input id="menuSearch" placeholder="Search menu items..." ${locked?'disabled':''}></div>
   <div class="sidebar-scroll">
     <div class="section-title"><h3>Categories</h3><button id="showAll">View All</button></div>
@@ -1660,7 +1662,7 @@ renderWorkspace = function(){
   if(!v46Day() && !currentOrder){
     const ws=$('#workspace');
     if(ws){
-      ws.innerHTML = `<div class="day-lock-panel card subcard"><div class="lock-icon">🔒</div><h2>Open Day Required</h2><p>Restaurant billing cannot start until Day is opened. Sales will be grouped from Open Day time to Close Day time, even if restaurant closes after 12 AM.</p><button class="primary-btn" onclick="openOpenShift()">Open Day Now</button><button class="ghost-btn" onclick="screen='admin';adminTab='reports';renderShell()">View Reports</button></div>`;
+      ws.innerHTML = `<div class="day-lock-panel card subcard"><div class="lock-icon">🔒</div><h2>Business Day Required</h2><p>Restaurant billing starts only after the business day is opened. Sales are grouped from opening time to close time, including sales after midnight.</p><button class="primary-btn" onclick="openOpenShift()">Open Business Day</button><button class="ghost-btn" onclick="screen='admin';adminTab='reports';renderShell()">View Reports</button></div>`;
     }
     return;
   }
@@ -1669,22 +1671,22 @@ renderWorkspace = function(){
 async function ensureOrder(){ if(currentOrder) return true; if(!v46RequireDay()) return false; openNewOrderModal(); return false; }
 openOpenShift = function(){
   const today = v46TodayKey();
-  openModal(`<div class="modal-head"><h2>Open Day</h2><button class="x" onclick="closeModal()">×</button></div>
-  <p class="muted-note">Open Day se hi sale start hogi. Agar restaurant 12 AM ke baad close ho, sale isi Business Date mein count hogi.</p>
+  openModal(`<div class="modal-head"><h2>Open Business Day</h2><button class="x" onclick="closeModal()">×</button></div>
+  <p class="muted-note">Sales are recorded against the selected Business Date from opening until day close. If the restaurant closes after midnight, the sales remain under the opened business day.</p>
   <div class="grid2"><div class="field"><label>Business Date</label><input id="businessDate" type="date" value="${today}"></div><div class="field"><label>Opening Cash</label><input id="openingCash" type="number" value="0" min="0"></div></div>
   <div class="field"><label>Opening Note</label><input id="dayNote" placeholder="Optional"></div>
-  <button class="primary-btn" style="width:100%" id="doOpenShift">Open Day & Start Billing</button>`);
-  $('#doOpenShift').onclick=async()=>{try{await api('/api/day/open',{businessDate:$('#businessDate').value,openingCash:Number($('#openingCash').value||0),note:$('#dayNote').value||''});closeModal();await loadState();renderShell();toast('Day opened. Billing unlocked.');}catch(e){toast(e.message,true);}};
+  <button class="primary-btn" style="width:100%" id="doOpenShift">Open Business Day & Start Billing</button>`);
+  $('#doOpenShift').onclick=async()=>{try{await api('/api/day/open',{businessDate:$('#businessDate').value,openingCash:Number($('#openingCash').value||0),note:$('#dayNote').value||''});closeModal();await loadState();renderShell();toast('Business day opened. Billing is now available.');}catch(e){toast(e.message,true);}};
 };
 openCloseShift = function(){
   const d=v46Day();
   const openCount=state?.openOrders?.length||0;
-  openModal(`<div class="modal-head"><h2>Close Day</h2><button class="x" onclick="closeModal()">×</button></div>
-  <p class="muted-note">${esc(v46DayLabel(d))}. Day close lazmi hai. Open bills close/pay/void karna zaroori hai.</p>
-  ${openCount?`<div class="empty-cart error-state"><b>${openCount} open bill(s)</b><p>Day close se pehle tamam open bills clear karo.</p></div>`:''}
+  openModal(`<div class="modal-head"><h2>Close Business Day</h2><button class="x" onclick="closeModal()">×</button></div>
+  <p class="muted-note">${esc(v46DayLabel(d))}. Please complete, pay, or void all open bills before closing the business day.</p>
+  ${openCount?`<div class="empty-cart error-state"><b>${openCount} open bill(s)</b><p>Complete, pay, or void all open bills before closing the business day.</p></div>`:''}
   <div class="field"><label>Counted Cash</label><input id="countedCash" type="number" value="0" min="0"></div>
   <button class="primary-btn" style="width:100%" id="doCloseShift" ${openCount?'disabled':''}>Close Day</button>`);
-  const btn=$('#doCloseShift'); if(btn) btn.onclick=async()=>{try{const j=await api('/api/day/close',{countedCash:Number($('#countedCash').value||0)});closeModal();await loadState();renderShell();toast(`Day closed. Difference ${money(j.shift.difference)}`);}catch(e){toast(e.message,true);}};
+  const btn=$('#doCloseShift'); if(btn) btn.onclick=async()=>{try{const j=await api('/api/day/close',{countedCash:Number($('#countedCash').value||0)});closeModal();await loadState();renderShell();toast(`Business day closed. Cash difference ${money(j.shift.difference)}`);}catch(e){toast(e.message,true);}};
 };
 addItem = async function(itemId){
   if(!v46RequireDay()) return;
@@ -1723,7 +1725,7 @@ function reportDateDefaults(kind){
   const d=new Date(); d.setDate(d.getDate()-30); d.setMinutes(d.getMinutes()-d.getTimezoneOffset()); return {from:d.toISOString().slice(0,10),to:today,shiftId:''};
 }
 function v46ShiftOptions(selected=''){
-  return (state.shifts||[]).map(s=>`<option value="${esc(s.id)}" ${selected===s.id?'selected':''}>Day #${esc(s.number)} · ${esc(s.businessDate || '')} · ${esc(s.status || '')}${s.closedAt?' · closed':''}</option>`).join('');
+  return (state.shifts||[]).map(s=>`<option value="${esc(s.id)}" ${selected===s.id?'selected':''}>Business Day ${esc(s.number)} · ${esc(s.businessDate || '')} · ${esc(String(s.status || '').toLowerCase().replace(/^./, c => c.toUpperCase()))}${s.closedAt?' · Closed':''}</option>`).join('');
 }
 function reportQuery(){
   const params = new URLSearchParams(); params.set('type', reportType);
@@ -1747,7 +1749,7 @@ function renderReports(ws){
     const userOptions=(state.users||[]).map(u=>`<option value="${esc(u.id)}">${esc(u.name)}</option>`).join('');
     const takerOptions=(state.orderTakers||[]).map(t=>`<option value="${esc(t.id)}">${esc(t.name)}</option>`).join('');
     ws.innerHTML=`<div class="report-page admin-report-shell pro-report-screen qb-report-module v46-report-page">
-      <div class="module-title v34-report-title"><div><h3>${esc(currentReportTitle())}</h3><p class="muted-note">Reports ab business day open-close par based hain. A4/Thermal print compact rakha gaya hai taa-ke extra pages waste na hon.</p></div><div class="actions-mini"><button class="ghost-btn" id="exportReport" disabled>Export CSV</button><button class="ghost-btn" id="printReportPdfBtn" disabled>A4 / PDF</button><button class="primary-btn" id="printReportThermalBtn" disabled>Thermal</button></div></div>
+      <div class="module-title v34-report-title"><div><h3>${esc(currentReportTitle())}</h3><p class="muted-note">Reports are based on the selected business day open-to-close period. A4/PDF and Thermal print layouts are compact to reduce paper waste.</p></div><div class="actions-mini"><button class="ghost-btn" id="exportReport" disabled>Export CSV</button><button class="ghost-btn" id="printReportPdfBtn" disabled>A4 / PDF</button><button class="primary-btn" id="printReportThermalBtn" disabled>Thermal</button></div></div>
       <div class="report-work card subcard v34-report-work">
         <div class="report-headline branded-report-headline"><div class="brand-report-name">${v34OrgLogoImg('report-org-logo screen-logo')}<div><h3 id="reportTitle">${esc(currentReportTitle())}</h3><span>${esc(v46DayLabel())}</span></div></div></div>
         <div class="report-filter-grid compact-filters v46-report-filters" id="reportFilters">
@@ -2007,24 +2009,24 @@ function v46SummaryBlock(r){
 }
 function openOpenShift(){
   const today = new Date().toISOString().slice(0,10);
-  openModal(`<div class="modal-head"><h2>Open Day</h2><button class="x" onclick="closeModal()">×</button></div>
-  <p class="muted-note">Business Date se sale group hogi. Opening Cash Float sirf drawer/till mein start par rakhi physical cash amount hai. Card/Online yahan enter nahi karna.</p>
-  <div class="grid2"><div class="field"><label>Business Date</label><input id="businessDate" type="date" value="${today}"></div><div class="field"><label>Opening Cash Float</label><input id="openingCash" type="number" value="0" min="0"><small>Sirf physical cash drawer amount. Agar float nahi rakhte to 0 rehne do.</small></div></div>
+  openModal(`<div class="modal-head"><h2>Open Business Day</h2><button class="x" onclick="closeModal()">×</button></div>
+  <p class="muted-note">Sales are grouped by Business Date from opening until day close. Opening Cash Float is the physical cash placed in the drawer at the start of the day; do not include Card or Online sales here.</p>
+  <div class="grid2"><div class="field"><label>Business Date</label><input id="businessDate" type="date" value="${today}"></div><div class="field"><label>Opening Cash Float</label><input id="openingCash" type="number" value="0" min="0"><small>Physical drawer cash only. Keep 0 if no cash float is used.</small></div></div>
   <div class="field"><label>Opening Note</label><textarea id="dayNote" rows="2" placeholder="Optional note"></textarea></div>
-  <button class="primary-btn" style="width:100%" id="doOpenShift">Open Day & Start Billing</button>`);
-  $('#doOpenShift').onclick=async()=>{try{await api('/api/day/open',{businessDate:$('#businessDate').value,openingCash:Number($('#openingCash').value||0),note:$('#dayNote').value||''});closeModal();await loadState();renderShell();toast('Day opened. Billing unlocked.');}catch(e){toast(e.message,true);}};
+  <button class="primary-btn" style="width:100%" id="doOpenShift">Open Business Day & Start Billing</button>`);
+  $('#doOpenShift').onclick=async()=>{try{await api('/api/day/open',{businessDate:$('#businessDate').value,openingCash:Number($('#openingCash').value||0),note:$('#dayNote').value||''});closeModal();await loadState();renderShell();toast('Business day opened. Billing is now available.');}catch(e){toast(e.message,true);}};
 }
 function openCloseShift(){
   const d=v46Day();
   if(!d) return openOpenShift();
   const openCount=(state.openOrders||[]).filter(o=>hasOrderLines(o)).length;
-  openModal(`<div class="modal-head"><h2>Close Day</h2><button class="x" onclick="closeModal()">×</button></div>
-  <p class="muted-note">${esc(v46DayLabel(d))}. Close Day par <b>Physical Cash Count</b> sirf drawer cash hai. Card/Online sales auto payment reports mein record hoti hain; counted cash mein add na karein.</p>
-  ${openCount?`<div class="empty-cart error-state"><b>${openCount} open bill(s)</b><p>Day close se pehle tamam open bills close/pay/void karo.</p></div>`:''}
-  <div class="field"><label>Physical Cash Count</label><input id="countedCash" type="number" value="0" min="0"><small>Drawer mein jo actual cash hai woh likho. Card/Online amount include na karo.</small></div>
+  openModal(`<div class="modal-head"><h2>Close Business Day</h2><button class="x" onclick="closeModal()">×</button></div>
+  <p class="muted-note">${esc(v46DayLabel(d))}. At Close Day, enter <b>Physical Cash Count</b> from the cash drawer only. Card and Online sales are recorded separately in tender reports.</p>
+  ${openCount?`<div class="empty-cart error-state"><b>${openCount} open bill(s)</b><p>Complete, pay, or void all open bills before closing the business day.</p></div>`:''}
+  <div class="field"><label>Physical Cash Count</label><input id="countedCash" type="number" value="0" min="0"><small>Enter the actual cash available in the drawer. Do not include Card or Online amounts.</small></div>
   <button class="primary-btn" style="width:100%" id="doCloseShift" ${openCount?'disabled':''}>Close Day</button>`);
   const btn=$('#doCloseShift');
-  if(btn) btn.onclick=async()=>{try{const j=await api('/api/day/close',{countedCash:Number($('#countedCash').value||0)});closeModal();await loadState();renderShell();toast(`Day closed. Cash difference ${money(j.shift.difference)}`);}catch(e){toast(e.message,true);}};
+  if(btn) btn.onclick=async()=>{try{const j=await api('/api/day/close',{countedCash:Number($('#countedCash').value||0)});closeModal();await loadState();renderShell();toast(`Business day closed. Cash difference ${money(j.shift.difference)}`);}catch(e){toast(e.message,true);}};
 }
 function buildThermalReportHtml(r){
   const s=r.summary||{}, sh=r.shiftSummary||{}, t=r.tenderSummary||{}; const title=currentReportTitle();
@@ -2036,8 +2038,56 @@ function buildThermalReportHtml(r){
   else if(reportType==='discount') body+=`<div class="tr-sep"></div>`+thermalTableBlock('DISCOUNT',(r.discountWise?.rows||[]).slice(0,25).map(o=>[`#${o.number}`,formatType(o.type),reportMoney(o.discount)]),3);
   else if(reportType==='voidrefund') body+=`<div class="tr-sep"></div>`+thermalTableBlock('VOID/REFUND',reportRefundRows(r).slice(0,25).map(x=>[`${x[0]} #${x[1]}`,x[5],x[4]]),3);
   else body+=`<div class="tr-sep"></div>`+thermalTableBlock('PAYMENTS',reportPaymentRows(r).map(p=>[p[0],`${p[1]} trx`,p[4]]),3);
-  body+=`<div class="tr-sep"></div><div class="tr-center small">Cash count excludes Card/Online.<br>${esc(state?.settings?.reportFooter || 'Generated by SwiftTill POS')}</div></div>`;
+  body+=`<div class="tr-sep"></div><div class="tr-center small">Cash count excludes Card and Online sales.<br>${esc(state?.settings?.reportFooter || 'Generated by SwiftTill POS')}</div></div>`;
   return body;
 }
 
 boot();
+
+
+/* ============================================================
+   SwiftTill V49 Professional Business Day Language
+   Client-facing wording cleanup for day open/close screens.
+============================================================ */
+function businessDayStatusTextV49(status){
+  const raw = String(status || 'OPEN').toLowerCase();
+  return raw ? raw.charAt(0).toUpperCase() + raw.slice(1) : 'Open';
+}
+function businessDayDateTextV49(day){
+  return day?.businessDate || (day?.openedAt ? new Date(day.openedAt).toLocaleDateString('en-CA') : '');
+}
+v46DayLabel = function(day=v46Day()){
+  if(!day) return 'No Business Day Open';
+  return `Business Day ${day.number || ''} · ${businessDayDateTextV49(day)} · ${businessDayStatusTextV49(day.status)}`;
+};
+const __v49RenderTopbar = renderTopbar;
+renderTopbar = function(){
+  return __v49RenderTopbar()
+    .replaceAll('Open Day before billing.', 'Open a business day before billing.')
+    .replaceAll('Back office, reports and day close.', 'Back office, reports and business day close.')
+    .replaceAll('Close Day', 'Close Business Day')
+    .replaceAll('Open Day', 'Open Business Day');
+};
+const __v49OpenCloseShift = openCloseShift;
+openCloseShift = function(){
+  const d=v46Day();
+  if(!d) return openOpenShift();
+  const openCount=(state.openOrders||[]).filter(o=>hasOrderLines(o)).length;
+  openModal(`<div class="modal-head"><h2>Close Business Day</h2><button class="x" onclick="closeModal()">×</button></div>
+  <p class="muted-note"><b>${esc(v46DayLabel(d))}</b><br>Enter the physical cash count and close the business day after all open bills are completed, paid, or voided.</p>
+  ${openCount?`<div class="empty-cart error-state"><b>${openCount} open bill(s)</b><p>Complete, pay, or void all open bills before closing the business day.</p></div>`:''}
+  <div class="field"><label>Physical Cash Count</label><input id="countedCash" type="number" value="0" min="0"><small>Cash drawer only. Card and Online payments are already tracked separately in tender reports.</small></div>
+  <button class="primary-btn" style="width:100%" id="doCloseShift" ${openCount?'disabled':''}>Close Business Day</button>`);
+  const btn=$('#doCloseShift');
+  if(btn) btn.onclick=async()=>{try{const j=await api('/api/day/close',{countedCash:Number($('#countedCash').value||0)});closeModal();await loadState();renderShell();toast(`Business day closed. Cash difference ${money(j.shift.difference)}`);}catch(e){toast(e.message,true);}};
+};
+const __v49OpenOpenShift = openOpenShift;
+openOpenShift = function(){
+  const today = v46TodayKey ? v46TodayKey() : new Date().toISOString().slice(0,10);
+  openModal(`<div class="modal-head"><h2>Open Business Day</h2><button class="x" onclick="closeModal()">×</button></div>
+  <p class="muted-note">Select the business date for sales reporting. Sales remain under this business day until it is closed, even if the restaurant continues after midnight.</p>
+  <div class="grid2"><div class="field"><label>Business Date</label><input id="businessDate" type="date" value="${today}"></div><div class="field"><label>Opening Cash Float</label><input id="openingCash" type="number" value="0" min="0"><small>Physical cash placed in the drawer at the start of the day.</small></div></div>
+  <div class="field"><label>Opening Note</label><textarea id="dayNote" rows="2" placeholder="Optional note"></textarea></div>
+  <button class="primary-btn" style="width:100%" id="doOpenShift">Open Business Day & Start Billing</button>`);
+  $('#doOpenShift').onclick=async()=>{try{await api('/api/day/open',{businessDate:$('#businessDate').value,openingCash:Number($('#openingCash').value||0),note:$('#dayNote').value||''});closeModal();await loadState();renderShell();toast('Business day opened. Billing is now available.');}catch(e){toast(e.message,true);}};
+};

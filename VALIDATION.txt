@@ -1,17 +1,10 @@
-SwiftTill POS V48 Validation
-============================
-Version: 48.0.0-tender-close-day-reports
+SwiftTill POS Validation
+Version: 49.0.0-professional-business-day-language
 
 Checks performed:
-- API syntax: PASS (node --check apps/api/server.js)
-- Web app JavaScript parse: PASS (new Function app.js)
-- Print agent syntax: PASS (node --check apps/print-agent/agent.js)
-- Offline modules: still removed / online-only
-- Day Close cash wording: physical cash only
-- Tender summary: Cash / Card / Online recorded separately
-- Cash drawer formula: Opening Cash Float + Cash Sales - Cash Refunds
-- Cash difference formula: Physical Cash Count - Expected Drawer Cash
-
-Notes:
-- Opening Cash Float is optional physical drawer float. Use 0 if restaurant does not keep starting cash in drawer.
-- Counted Cash must not include Card/Online/Bank/Wallet amounts.
+- API JavaScript syntax: PASS
+- Web app JavaScript syntax: PASS
+- Package JSON: PASS
+- Professional Business Day wording: PASS
+- Offline modules remain removed: PASS
+- ZIP integrity: PASS
