@@ -73,10 +73,15 @@ async function api(path, data, method='POST'){
   if(state?.settings?.onlineOnly && !navigator.onLine) throw new Error('Internet connection required. Offline mode is disabled for this build.');
   setBusy(true);
   try{
-    const res = await fetch(path, { method, headers:{'Content-Type':'application/json', Authorization:`Bearer ${token}`}, body:data ? JSON.stringify(data) : undefined });
+    const res = await fetch(path, { method, headers:{'Content-Type':'application/json', Authorization:`Bearer ${token}`}, body:data ? JSON.stringify(data) : undefined, cache:'no-store' });
     if(res.headers.get('content-type')?.includes('text/csv')) return res;
-    const json = await res.json().catch(()=>({ok:false,error:'Invalid server response'}));
-    if(!res.ok || json.ok===false) throw new Error(json.error || 'Request failed');
+    const text = await res.text();
+    let json = null;
+    try{ json = text ? JSON.parse(text) : {}; }catch{
+      const serverDown = [502,503,504].includes(res.status) || /bad gateway|service unavailable/i.test(text || '');
+      throw new Error(serverDown ? 'Server is temporarily unavailable. Please wait for Render to restart, then try again.' : `Invalid server response (${res.status || 'network'}).`);
+    }
+    if(!res.ok || json.ok===false) throw new Error(json.error || json.message || 'Request failed');
     return json;
   } finally { setBusy(false); }
 }
@@ -2726,8 +2731,10 @@ document.documentElement.classList.add('v55-functionality-stabilized');
    - Online-only mode preserved; no offline module.
 ============================================================ */
 const SWIFTTILL_V57 = {
-  version: '57.0.0-pin-security-complete',
+  version: '58.0.0-pin-registration-stability',
   userPinRegister: true,
+  pinRegisterServerStability: true,
+  defaultPinReplacement: true,
   userPinChange: true,
   adminUserPinManagement: true,
   pinApprovalByManagerAdmin: true,
@@ -2751,19 +2758,19 @@ function openPinSecurityModal(){
   const hasPin = !!me.pinSet;
   openModal(`<div class="modal-head"><h2>PIN Security</h2><button class="x" onclick="closeModal()">×</button></div>
     <p class="muted-note">Use a PIN for manager/admin approvals such as void, refund, payment correction and reopen/edit. Passwords are never shown.</p>
-    <div class="setup-line ${hasPin?'ok-text':'danger-text'}"><b>Status:</b> ${hasPin?'PIN is registered for your account.':'No PIN registered for your account.'}</div>
+    <div class="setup-line ${hasPin&&!me.defaultPinActive?'ok-text':'danger-text'}"><b>Status:</b> ${me.defaultPinActive?'Default PIN is active. Replace it before client handover.':(hasPin?'PIN is registered for your account.':'No PIN registered for your account.')}</div>
     <div class="grid2">
-      <button class="primary-btn" id="registerPinBtn" type="button">Register PIN</button>
+      ${(!hasPin || me.defaultPinActive) ? '<button class="primary-btn" id="registerPinBtn" type="button">'+(me.defaultPinActive?'Replace Default PIN':'Register PIN')+'</button>' : ''}
       <button class="ghost-btn" id="changePinBtn" type="button">Change PIN</button>
     </div>
-    <button class="danger-btn" id="removePinBtn" type="button" style="width:100%;margin-top:10px">Remove My PIN</button>`);
-  $('#registerPinBtn').onclick = openRegisterPinModal;
+    ${hasPin&&!me.defaultPinActive ? '<button class="danger-btn" id="removePinBtn" type="button" style="width:100%;margin-top:10px">Remove My PIN</button>' : ''}`);
+  const regBtn = $('#registerPinBtn'); if(regBtn) regBtn.onclick = openRegisterPinModal;
   $('#changePinBtn').onclick = openChangePinModal;
-  $('#removePinBtn').onclick = openRemovePinModal;
+  const remBtn = $('#removePinBtn'); if(remBtn) remBtn.onclick = openRemovePinModal;
 }
 function openRegisterPinModal(){
   openModal(`<div class="modal-head"><h2>Register PIN</h2><button class="x" onclick="closeModal()">×</button></div>
-    <p class="muted-note">First-time PIN setup requires your current login password.</p>
+    <p class="muted-note">PIN setup requires your current login password. If a default PIN exists, this will replace it with your new secure PIN.</p>
     <div class="field"><label>Current Password</label><input id="pinPassword" type="password" autocomplete="current-password"></div>
     ${v57PinInput('newPin','New PIN')}
     ${v57PinInput('confirmPin','Confirm PIN')}
@@ -2916,7 +2923,7 @@ if(typeof openVoidOrderModal === 'function'){
   };
 }
 
-document.documentElement.classList.add('v57-pin-security-complete');
+document.documentElement.classList.add('v57-pin-security-complete','v58-pin-registration-stability');
 
 if(typeof renderAdminContent === 'function'){
   const __v57BaseRenderAdminContent = renderAdminContent;

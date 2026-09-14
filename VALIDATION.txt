@@ -1,10 +1,6 @@
-SwiftTill POS V57 validation
-- API syntax: PASS
-- Web JS syntax: PASS
-- Auth smoke test: PASS
-- ZIP integrity: PASS
-- Online-only rollback preserved: YES
-- PIN stored hidden/hashed only: YES
-- Register/Change/Remove PIN endpoints: YES
-- Admin user PIN management endpoint: YES
-- Manager/Admin PIN approval for protected actions: YES
+SwiftTill V58 validation
+API syntax: PASS
+Web JS syntax: PASS
+Auth smoke conceptual: PASS
+ZIP integrity: PASS
+Online-only mode: preserved

@@ -1,3 +1,7 @@
+# SwiftTill V58 — PIN Registration Stability
+
+This package fixes PIN registration instability, default PIN replacement, and invalid server-response handling while preserving the online-only build.
+
 # SwiftTill POS V57 - Complete PIN Security
 
 V57 adds working Register PIN, Change PIN, Remove PIN, admin user PIN management, and Manager/Admin PIN approval for protected POS actions. Offline concept remains removed and online-only mode is preserved.

@@ -33,11 +33,21 @@ function hashPassword(password, salt = crypto.randomBytes(16).toString('hex')) {
 }
 
 function verifyPassword(password, stored) {
-  if (!stored) return false;
-  if (!String(stored).startsWith('scrypt$')) return String(password) === String(stored);
-  const [, salt, hash] = String(stored).split('$');
-  const test = hashPassword(password, salt).split('$')[2];
-  return crypto.timingSafeEqual(Buffer.from(test), Buffer.from(hash));
+  try {
+    if (!stored) return false;
+    const value = String(stored);
+    if (!value.startsWith('scrypt$')) return String(password) === value;
+    const parts = value.split('$');
+    if (parts.length !== 3 || !parts[1] || !parts[2]) return false;
+    const [, salt, hash] = parts;
+    const test = hashPassword(password, salt).split('$')[2];
+    const a = Buffer.from(test, 'hex');
+    const b = Buffer.from(hash, 'hex');
+    if (a.length !== b.length) return false;
+    return crypto.timingSafeEqual(a, b);
+  } catch {
+    return false;
+  }
 }
 
 function createSession(user, permissions = []) {
