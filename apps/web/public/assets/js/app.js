@@ -2717,3 +2717,212 @@ if(typeof submitNewOrder === 'function'){
 }
 
 document.documentElement.classList.add('v55-functionality-stabilized');
+
+/* ============================================================
+   SwiftTill V57 PIN Security Complete
+   - Working Register PIN / Change PIN / Remove PIN.
+   - Admin user PIN set/change/clear with confirmation.
+   - Manager/Admin approval PIN works for protected POS actions.
+   - Online-only mode preserved; no offline module.
+============================================================ */
+const SWIFTTILL_V57 = {
+  version: '57.0.0-pin-security-complete',
+  userPinRegister: true,
+  userPinChange: true,
+  adminUserPinManagement: true,
+  pinApprovalByManagerAdmin: true,
+  onlineOnly: true
+};
+window.SWIFTTILL_V57 = SWIFTTILL_V57;
+
+function v57CurrentUserMeta(){
+  return (state?.users || []).find(u => u.id === state?.user?.id) || {};
+}
+function v57PinInput(id, label, placeholder='4 to 8 digits'){
+  return `<div class="field"><label>${esc(label)}</label><input id="${esc(id)}" type="password" inputmode="numeric" pattern="[0-9]*" maxlength="8" autocomplete="off" placeholder="${esc(placeholder)}"></div>`;
+}
+function v57ValidatePinValue(pin, label='PIN'){
+  const v = String(pin || '').trim();
+  if(!/^\d{4,8}$/.test(v)) throw new Error(`${label} must be 4 to 8 digits`);
+  return v;
+}
+function openPinSecurityModal(){
+  const me = v57CurrentUserMeta();
+  const hasPin = !!me.pinSet;
+  openModal(`<div class="modal-head"><h2>PIN Security</h2><button class="x" onclick="closeModal()">×</button></div>
+    <p class="muted-note">Use a PIN for manager/admin approvals such as void, refund, payment correction and reopen/edit. Passwords are never shown.</p>
+    <div class="setup-line ${hasPin?'ok-text':'danger-text'}"><b>Status:</b> ${hasPin?'PIN is registered for your account.':'No PIN registered for your account.'}</div>
+    <div class="grid2">
+      <button class="primary-btn" id="registerPinBtn" type="button">Register PIN</button>
+      <button class="ghost-btn" id="changePinBtn" type="button">Change PIN</button>
+    </div>
+    <button class="danger-btn" id="removePinBtn" type="button" style="width:100%;margin-top:10px">Remove My PIN</button>`);
+  $('#registerPinBtn').onclick = openRegisterPinModal;
+  $('#changePinBtn').onclick = openChangePinModal;
+  $('#removePinBtn').onclick = openRemovePinModal;
+}
+function openRegisterPinModal(){
+  openModal(`<div class="modal-head"><h2>Register PIN</h2><button class="x" onclick="closeModal()">×</button></div>
+    <p class="muted-note">First-time PIN setup requires your current login password.</p>
+    <div class="field"><label>Current Password</label><input id="pinPassword" type="password" autocomplete="current-password"></div>
+    ${v57PinInput('newPin','New PIN')}
+    ${v57PinInput('confirmPin','Confirm PIN')}
+    <button class="primary-btn" id="doRegisterPin" style="width:100%">Register PIN</button>`);
+  $('#doRegisterPin').onclick = async () => {
+    try{
+      const pin = v57ValidatePinValue($('#newPin').value, 'New PIN');
+      if($('#confirmPin').value !== pin) throw new Error('PIN confirmation does not match');
+      await api('/api/account/register-pin',{password:$('#pinPassword').value,pin,confirmPin:$('#confirmPin').value});
+      closeModal(); await loadState(); renderShell(); toast('PIN registered');
+    }catch(e){ toast(e.message,true); }
+  };
+}
+function openChangePinModal(){
+  openModal(`<div class="modal-head"><h2>Change PIN</h2><button class="x" onclick="closeModal()">×</button></div>
+    <p class="muted-note">Enter current PIN. If current PIN is forgotten, enter your login password instead.</p>
+    <div class="grid2">
+      ${v57PinInput('currentPin','Current PIN','Current PIN')}
+      <div class="field"><label>Or Current Password</label><input id="pinChangePassword" type="password" autocomplete="current-password" placeholder="Use if PIN is forgotten"></div>
+    </div>
+    ${v57PinInput('newPin','New PIN')}
+    ${v57PinInput('confirmPin','Confirm PIN')}
+    <button class="primary-btn" id="doChangePin" style="width:100%">Update PIN</button>`);
+  $('#doChangePin').onclick = async () => {
+    try{
+      const pin = v57ValidatePinValue($('#newPin').value, 'New PIN');
+      if($('#confirmPin').value !== pin) throw new Error('PIN confirmation does not match');
+      await api('/api/account/change-pin',{currentPin:$('#currentPin').value,password:$('#pinChangePassword').value,newPin:pin,confirmPin:$('#confirmPin').value});
+      closeModal(); await loadState(); renderShell(); toast('PIN updated');
+    }catch(e){ toast(e.message,true); }
+  };
+}
+function openRemovePinModal(){
+  openModal(`<div class="modal-head"><h2>Remove PIN</h2><button class="x" onclick="closeModal()">×</button></div>
+    <p class="muted-note">For safety, your current password is required before removing your own PIN.</p>
+    <div class="field"><label>Current Password</label><input id="removePinPassword" type="password" autocomplete="current-password"></div>
+    <button class="danger-btn" id="doRemovePin" style="width:100%">Remove PIN</button>`);
+  $('#doRemovePin').onclick = async () => {
+    try{
+      await api('/api/account/remove-pin',{password:$('#removePinPassword').value});
+      closeModal(); await loadState(); renderShell(); toast('PIN removed');
+    }catch(e){ toast(e.message,true); }
+  };
+}
+
+if(typeof renderSetup === 'function'){
+  const __v57BaseRenderSetup = renderSetup;
+  renderSetup = function(c){
+    __v57BaseRenderSetup(c);
+    const quick = c?.querySelector?.('.setup-grid .subcard:nth-child(2)');
+    if(quick && !quick.querySelector('#pinSecurityQuickBtn')){
+      const btn = document.createElement('button');
+      btn.className = 'ghost-btn';
+      btn.type = 'button';
+      btn.id = 'pinSecurityQuickBtn';
+      btn.textContent = 'PIN Security';
+      btn.onclick = openPinSecurityModal;
+      quick.appendChild(btn);
+    }
+  };
+}
+
+if(typeof renderSettings === 'function'){
+  const __v57BaseRenderSettings = renderSettings;
+  renderSettings = function(c){
+    __v57BaseRenderSettings(c);
+    const cp = c?.querySelector?.('#changePasswordBtn');
+    if(cp && !c.querySelector('#changePinSettingsBtn')){
+      const pinBtn = document.createElement('button');
+      pinBtn.type = 'button';
+      pinBtn.className = 'ghost-btn';
+      pinBtn.id = 'changePinSettingsBtn';
+      pinBtn.textContent = 'PIN Security';
+      pinBtn.onclick = openPinSecurityModal;
+      cp.insertAdjacentElement('afterend', pinBtn);
+    }
+    const mgr = c?.querySelector?.('input[name="managerPin"]');
+    if(mgr){
+      const label = mgr.closest('.field')?.querySelector('label');
+      if(label) label.textContent = 'Global Manager Approval PIN';
+      mgr.placeholder = 'Optional fallback PIN; leave blank to keep current';
+    }
+  };
+}
+
+if(typeof openAdminEditor === 'function'){
+  const __v57BaseOpenAdminEditor = openAdminEditor;
+  openAdminEditor = function(kind, record={}){
+    if(kind !== 'user') return __v57BaseOpenAdminEditor(kind, record);
+    const pinStatus = record.id ? (record.pinSet ? 'PIN registered' : 'No PIN registered') : 'Optional during setup';
+    const body = `${hiddenId(record)}${input('name','Name',record.name)}${input('email','Email',record.email||'')}
+      <div class="field"><label>${record.id?'New Password':'Password'} ${record.id?'':'*'}</label><input name="password" type="password" value="" minlength="8" placeholder="${record.id?'Leave blank to keep current password':'Minimum 8 characters'}"></div>
+      ${multiRoles(record.roleIds||[])}
+      <div class="card subcard pin-admin-card">
+        <h3>User PIN</h3>
+        <p class="muted-note">${esc(pinStatus)}. PIN is used for manager/admin approval actions. It is stored as a secure hash and never displayed.</p>
+        <div class="field"><label>PIN Action</label><select id="userPinAction"><option value="none">No change</option><option value="set">Set / Change PIN</option>${record.id?'<option value="clear">Clear PIN</option>':''}</select></div>
+        <div id="userPinFields" class="grid2" style="display:none">${v57PinInput('adminUserPin','New PIN')}${v57PinInput('adminUserConfirmPin','Confirm PIN')}</div>
+      </div>
+      ${check('active','Active',record.active!==false)}`;
+    openModal(`<div class="modal-head"><h2>${record.id?'Edit':'Add'} User</h2><button class="x" onclick="closeModal()">×</button></div><form id="adminForm">${body}<button class="primary-btn" style="width:100%">Save User</button></form>`);
+    const action = $('#userPinAction');
+    const fields = $('#userPinFields');
+    if(action && fields){ action.onchange = () => { fields.style.display = action.value === 'set' ? 'grid' : 'none'; }; }
+    $('#adminForm').onsubmit = async e => {
+      e.preventDefault();
+      const fd = new FormData(e.target);
+      const data = Object.fromEntries(fd);
+      data.active = fd.has('active');
+      data.roleIds = fd.getAll('roleIds');
+      delete data.pin;
+      try{
+        const pinAction = $('#userPinAction')?.value || 'none';
+        if(pinAction === 'set'){
+          const pin = v57ValidatePinValue($('#adminUserPin').value, 'User PIN');
+          if($('#adminUserConfirmPin').value !== pin) throw new Error('PIN confirmation does not match');
+        }
+        const saved = await api('/api/admin/user', data);
+        const userId = saved?.record?.id || data.id;
+        if(pinAction === 'set'){
+          await api('/api/admin/user-pin', {id:userId, pin:$('#adminUserPin').value, confirmPin:$('#adminUserConfirmPin').value});
+        }else if(pinAction === 'clear'){
+          await api('/api/admin/user-pin', {id:userId, clearPin:true});
+        }
+        closeModal(); await loadState(); renderShell(); toast('User saved');
+      }catch(err){ toast(err.message,true); }
+    };
+  };
+}
+
+if(typeof openVoidOrderModal === 'function'){
+  openVoidOrderModal = function(orderId){
+    const o=(state.openOrders||[]).find(x=>x.id===orderId) || (currentOrder && currentOrder.id===orderId ? currentOrder : null);
+    if(!o) return toast('Open order not found', true);
+    const t=calcTotals(o);
+    openModal(`<div class="modal-head"><h2>Void / Cancel Bill #${esc(o.number||'Draft')}</h2><button class="x" onclick="closeModal()">×</button></div>
+      <p class="muted-note">Use this only for open/held bills that should not be paid. Paid bills must use Refund.</p>
+      <div class="pay-total-card"><span>Bill Total</span><b>${money(t.total)}</b></div>
+      <div class="field"><label>Reason</label><input id="voidReason" value="Customer cancelled / order mistake"></div>
+      <div class="grid2"><div class="field"><label>Manager/Admin PIN</label><input id="voidPin" type="password" inputmode="numeric" placeholder="4 to 8 digit approval PIN"></div><div class="field"><label>Approver Email</label><input id="voidEmail" type="email" placeholder="Manager/Admin email"></div></div>
+      <div class="field"><label>Approver Password</label><input id="voidPassword" type="password" placeholder="Use password approval if PIN is unavailable"></div>
+      <button class="danger-btn" id="doVoidOrder" style="width:100%">Void / Cancel Bill</button>`);
+    $('#doVoidOrder').onclick=async()=>{
+      try{
+        await api('/api/orders/void',{id:orderId,reason:$('#voidReason').value,approverPin:$('#voidPin').value,managerPin:$('#voidPin').value,approverEmail:$('#voidEmail').value,approverPassword:$('#voidPassword').value});
+        if(currentOrder && currentOrder.id===orderId) currentOrder=null;
+        closeModal(); await loadState(); screen='pos'; centerMode='open'; renderShell(); toast('Bill voided / cancelled');
+      }catch(e){ toast(e.message,true); }
+    };
+  };
+}
+
+document.documentElement.classList.add('v57-pin-security-complete');
+
+if(typeof renderAdminContent === 'function'){
+  const __v57BaseRenderAdminContent = renderAdminContent;
+  renderAdminContent = function(){
+    const c = $('#adminContent');
+    if(adminTab === 'users' && c) return adminList(c,'users','user',['name','email','roleIds','pinSet','active']);
+    return __v57BaseRenderAdminContent();
+  };
+}

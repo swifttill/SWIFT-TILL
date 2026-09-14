@@ -1,3 +1,7 @@
+# SwiftTill POS V57 - Complete PIN Security
+
+V57 adds working Register PIN, Change PIN, Remove PIN, admin user PIN management, and Manager/Admin PIN approval for protected POS actions. Offline concept remains removed and online-only mode is preserved.
+
 # SwiftTill POS V56 — Online-only Category UI + Stability Audit
 
 V56 keeps the system online-only and does not add offline billing. This phase is a targeted UI/stability cleanup: the POS category sidebar cards are normalized, the All Items button no longer truncates because of a missing icon column, and the previous Create Order workflow remains stable.

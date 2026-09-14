@@ -1203,3 +1203,11 @@ input:focus,select:focus,textarea:focus,button:focus-visible{outline:3px solid r
   }
   .cat-btn.active{background:#075fff!important;color:#fff!important;border-color:#075fff!important;}
 }
+
+/* SwiftTill V57 PIN Security polish */
+.pin-admin-card{margin:12px 0;padding:14px;border:1px solid var(--line,#d9e6fb);background:linear-gradient(180deg,#ffffff,#f8fbff);}
+.pin-admin-card h3{margin:0 0 6px;font-size:14px;color:#0f2857;}
+.v57-pin-security-complete input[inputmode="numeric"],
+.v57-pin-security-complete input[type="password"]{letter-spacing:.04em;}
+.v57-pin-security-complete #userPinFields.grid2{align-items:end;}
+@media(max-width:720px){.pin-admin-card #userPinFields.grid2{grid-template-columns:1fr!important;}}
