@@ -1,3 +1,7 @@
+# SwiftTill POS V53 - Filters, Sorting, Open Order Void/Cancel Access
+
+V53 adds Paid Orders search/date range/type/payment/sort filters, Open Orders search/date range/type/sort filters, and authorized POS open order void/cancel with permission/PIN/password approval. Online-only mode remains active; offline concept is not included.
+
 # SwiftTill POS V52 Client-Facing Admin Cleanup
 
 Latest version: 52.0.0-client-facing-admin-cleanup

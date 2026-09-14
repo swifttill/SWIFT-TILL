@@ -2401,3 +2401,212 @@ openAdminEditor = function(kind, record={}){
 };
 
 document.documentElement.classList.add('v52-admin-cleanup');
+
+
+/* ============================================================
+   SwiftTill V53 Search/Filters/Open Order Void
+   - Paid Orders: search, date range, type, payment, sort
+   - Open Orders: search, type, date range, sort + POS void/cancel
+   - Manager/Admin approval via permission, PIN or password
+   - Online-only mode preserved. Offline concept removed.
+============================================================ */
+const SWIFTTILL_V53 = {
+  version: '53.0.0-filters-open-order-void-access',
+  paidOrdersFilters: true,
+  paidOrdersSorting: true,
+  openOrdersFilters: true,
+  openOrderVoidCancel: true,
+  managerAdminApprovalForVoid: true,
+  onlineOnly: true
+};
+window.SWIFTTILL_V53 = SWIFTTILL_V53;
+window.swiftPaidOrderFilters ||= { search:'', from:'', to:'', type:'ALL', payment:'ALL', sort:'paidAt_desc' };
+window.swiftOpenOrderFilters ||= { search:'', from:'', to:'', type:'ALL', sort:'oldest' };
+
+function v53DateValue(iso){
+  if(!iso) return '';
+  const d = new Date(iso);
+  if(Number.isNaN(d.getTime())) return String(iso).slice(0,10);
+  const local = new Date(d.getTime() - d.getTimezoneOffset()*60000);
+  return local.toISOString().slice(0,10);
+}
+function v53InDateRange(iso, from, to){
+  const val = v53DateValue(iso);
+  if(from && val < from) return false;
+  if(to && val > to) return false;
+  return true;
+}
+function v53OrderSearchText(o){
+  const table = state.tables?.find(t=>t.id===o.tableId)?.name || '';
+  const pays = (o.payments||[]).map(p=>`${p.method||''} ${p.reference||''}`).join(' ');
+  return [o.number,o.type,table,o.customerName,o.mobile,o.address,o.orderTakerName,o.cashierName,o.businessDate,pays].join(' ').toLowerCase();
+}
+function v53PaymentMatch(o, payment){
+  if(!payment || payment === 'ALL') return true;
+  return (o.payments||[]).some(p=>String(p.method||'').toUpperCase() === payment);
+}
+function v53SortOrders(rows, sort){
+  const list=[...rows];
+  const byDate = o => new Date(o.paidAt || o.createdAt || 0).getTime() || 0;
+  const byOpen = o => new Date(o.createdAt || o.updatedAt || 0).getTime() || 0;
+  const byTotal = o => Number(calcTotals(o).total || 0);
+  const num = o => Number(String(o.number||'').replace(/\D/g,'')) || 0;
+  return list.sort((a,b)=>{
+    if(sort==='paidAt_asc') return byDate(a)-byDate(b);
+    if(sort==='total_desc') return byTotal(b)-byTotal(a);
+    if(sort==='total_asc') return byTotal(a)-byTotal(b);
+    if(sort==='bill_desc') return num(b)-num(a);
+    if(sort==='bill_asc') return num(a)-num(b);
+    if(sort==='newest') return byOpen(b)-byOpen(a);
+    if(sort==='oldest') return byOpen(a)-byOpen(b);
+    return byDate(b)-byDate(a);
+  });
+}
+function v53PaidFilterControls(f){
+  return `<div class="admin-filterbar card v53-filterbar">
+    <div class="field admin-filter-field search-field"><label>Search</label><input id="paidSearchFilter" value="${esc(f.search||'')}" placeholder="Bill, customer, mobile, table..." autocomplete="off" spellcheck="false"></div>
+    <div class="field admin-filter-field"><label>From</label><input id="paidFromFilter" type="date" value="${esc(f.from||'')}"></div>
+    <div class="field admin-filter-field"><label>To</label><input id="paidToFilter" type="date" value="${esc(f.to||'')}"></div>
+    <div class="field admin-filter-field"><label>Order Type</label><select id="paidTypeFilter"><option value="ALL">All</option><option value="DINE_IN">Dine In</option><option value="DELIVERY">Delivery</option><option value="TAKEAWAY">Takeaway</option></select></div>
+    <div class="field admin-filter-field"><label>Payment</label><select id="paidPaymentFilter"><option value="ALL">All</option><option value="CASH">Cash</option><option value="CARD">Card</option><option value="ONLINE">Online</option></select></div>
+    <div class="field admin-filter-field"><label>Sort By</label><select id="paidSortFilter"><option value="paidAt_desc">Latest paid first</option><option value="paidAt_asc">Oldest paid first</option><option value="bill_desc">Bill no. high to low</option><option value="bill_asc">Bill no. low to high</option><option value="total_desc">Total high to low</option><option value="total_asc">Total low to high</option></select></div>
+  </div>`;
+}
+function v53PaidRows(){
+  const f=window.swiftPaidOrderFilters;
+  const q=String(f.search||'').toLowerCase().trim();
+  let rows=(state.paidOrders||[]).filter(o=>{
+    if(q && !v53OrderSearchText(o).includes(q)) return false;
+    if(!v53InDateRange(o.paidAt||o.createdAt, f.from, f.to)) return false;
+    if(f.type && f.type!=='ALL' && o.type !== f.type) return false;
+    if(!v53PaymentMatch(o, f.payment)) return false;
+    return true;
+  });
+  return v53SortOrders(rows, f.sort || 'paidAt_desc');
+}
+function v53PaidTableHtml(rows){
+  return `<div class="report-table-wrap admin-table-shell"><table class="admin-table paid-orders-table"><thead><tr><th>Bill</th><th>Paid Date</th><th>Type</th><th>Table</th><th>Customer</th><th>Total</th><th>Payment</th><th>Action</th></tr></thead><tbody id="paidOrderRows">${rows.map(o=>{ const tt=calcTotals(o); const table=state.tables.find(t=>t.id===o.tableId)?.name||'—'; const payments=(o.payments||[]).map(p=>`${p.method} ${money(p.amount)}`).join(', ') || '—'; return `<tr><td><b>#${esc(o.number||'Draft')}</b></td><td>${esc(new Date(o.paidAt||o.createdAt).toLocaleString())}</td><td>${formatType(o.type)}</td><td>${esc(table)}</td><td>${esc(o.customerName||o.mobile||'Walk-in')}</td><td><b>${money(tt.total)}</b></td><td>${esc(payments)}</td><td><div class="row-actions paid-actions"><button class="ghost-btn tiny" type="button" data-paid-view="${esc(o.id)}">View</button><button class="ghost-btn tiny" type="button" data-paid-correct="${esc(o.id)}">Change Payment</button><button class="danger-btn tiny" type="button" data-paid-refund="${esc(o.id)}">Refund</button><button class="secondary-btn tiny" type="button" data-paid-reopen="${esc(o.id)}">Reopen/Edit</button></div></td></tr>`; }).join('') || '<tr><td colspan="8" class="empty-td">No paid orders match these filters.</td></tr>'}</tbody></table></div>`;
+}
+function v53RefreshPaidOrders(c){
+  const rows=v53PaidRows();
+  const count=$('#paidOrderCount', c);
+  if(count) count.textContent = `${rows.length} paid orders shown from ${(state.paidOrders||[]).length}.`;
+  const wrap=$('#paidOrderTableWrap', c);
+  if(wrap) wrap.innerHTML=v53PaidTableHtml(rows);
+  v53BindPaidActions(rows);
+}
+function v53BindPaidActions(rows){
+  $$('[data-paid-view]').forEach(b=>b.onclick=()=>{ const o=(state.paidOrders||[]).find(x=>x.id===b.dataset.paidView); if(!o)return; const r=receiptFromOrder(o); showReceiptModal(r,false); });
+  $$('[data-paid-refund]').forEach(b=>b.onclick=()=>openRefundModal(b.dataset.paidRefund));
+  $$('[data-paid-correct]').forEach(b=>b.onclick=()=>openPaymentCorrectionModal(b.dataset.paidCorrect));
+  $$('[data-paid-reopen]').forEach(b=>b.onclick=()=>openReopenPaidModal(b.dataset.paidReopen));
+}
+renderPaidOrders = function(c){
+  const f=window.swiftPaidOrderFilters;
+  const rows=v53PaidRows();
+  c.innerHTML=`<div class="module-title"><div><h3>Paid Orders</h3><p class="muted-note" id="paidOrderCount">${rows.length} paid orders shown from ${(state.paidOrders||[]).length}. Use search, date range, filters and sorting for audit work.</p></div></div>${v53PaidFilterControls(f)}<div class="card subcard" id="paidOrderTableWrap">${v53PaidTableHtml(rows)}</div>`;
+  $('#paidTypeFilter', c).value=f.type||'ALL';
+  $('#paidPaymentFilter', c).value=f.payment||'ALL';
+  $('#paidSortFilter', c).value=f.sort||'paidAt_desc';
+  const bind=(id,key)=>{ const el=$('#'+id,c); if(!el) return; el.addEventListener(el.tagName==='INPUT'?'input':'change', e=>{ f[key]=e.target.value; const cap={selector:'#'+id,start:e.target.selectionStart,end:e.target.selectionEnd,scrollX:window.scrollX,scrollY:window.scrollY}; v53RefreshPaidOrders(c); v51RestoreFocus(cap); }); };
+  bind('paidSearchFilter','search'); bind('paidFromFilter','from'); bind('paidToFilter','to'); bind('paidTypeFilter','type'); bind('paidPaymentFilter','payment'); bind('paidSortFilter','sort');
+  v53BindPaidActions(rows);
+};
+
+function v53OpenControls(f){
+  return `<div class="admin-filterbar card v53-filterbar open-filterbar">
+    <div class="field admin-filter-field search-field"><label>Search</label><input id="openSearchFilter" value="${esc(f.search||'')}" placeholder="Bill, table, customer, order taker..." autocomplete="off" spellcheck="false"></div>
+    <div class="field admin-filter-field"><label>From</label><input id="openFromFilter" type="date" value="${esc(f.from||'')}"></div>
+    <div class="field admin-filter-field"><label>To</label><input id="openToFilter" type="date" value="${esc(f.to||'')}"></div>
+    <div class="field admin-filter-field"><label>Order Type</label><select id="openTypeFilter"><option value="ALL">All</option><option value="DINE_IN">Dine In</option><option value="DELIVERY">Delivery</option><option value="TAKEAWAY">Takeaway</option></select></div>
+    <div class="field admin-filter-field"><label>Sort By</label><select id="openSortFilter"><option value="oldest">Oldest open first</option><option value="newest">Newest open first</option><option value="bill_desc">Bill no. high to low</option><option value="bill_asc">Bill no. low to high</option><option value="total_desc">Total high to low</option><option value="total_asc">Total low to high</option></select></div>
+  </div>`;
+}
+function v53OpenRows(){
+  const f=window.swiftOpenOrderFilters;
+  const q=String(f.search||'').toLowerCase().trim();
+  let rows=(state.openOrders||[]).filter(o=>{
+    if(q && !v53OrderSearchText(o).includes(q)) return false;
+    if(!v53InDateRange(o.createdAt||o.updatedAt, f.from, f.to)) return false;
+    if(f.type && f.type!=='ALL' && o.type !== f.type) return false;
+    return true;
+  });
+  return v53SortOrders(rows, f.sort || 'oldest');
+}
+function v53OpenListHtml(rows){
+  return rows.length ? rows.map(o=>`<div class="open-order v53-open-order" data-open-card="${esc(o.id)}"><button class="open-order-main" type="button" data-open-id="${esc(o.id)}"><div><h4>#${esc(o.number||'Draft')} • ${formatType(o.type)} • ${esc(orderContext(o))}</h4><p>${esc(o.orderTakerName||o.customerName||'')} • <span data-live-timer="${esc(o.createdAt)}">${elapsedClock(o.createdAt)}</span> • ${o.lines?.length||0} lines</p></div><b>${money(calcTotals(o).total)}</b></button><div class="open-order-actions"><button class="ghost-btn tiny" type="button" data-open-edit="${esc(o.id)}">Open/Edit</button><button class="danger-btn tiny" type="button" data-open-void="${esc(o.id)}">Void / Cancel</button></div></div>`).join('') : `<div class="empty-cart">No open orders match these filters.</div>`;
+}
+function v53RefreshOpenOrders(){
+  const rows=v53OpenRows();
+  const count=$('#openOrderCount');
+  if(count) count.textContent = `${rows.length} open orders shown from ${(state.openOrders||[]).length}.`;
+  const list=$('#openList');
+  if(list) list.innerHTML=v53OpenListHtml(rows);
+  v53BindOpenActions();
+}
+function v53OpenOrder(orderId){
+  const o=state.openOrders.find(x=>x.id===orderId);
+  if(o){ currentOrder=clone(o); centerMode='menu'; renderShell(); }
+}
+function v53BindOpenActions(){
+  $$('[data-open-id], [data-open-edit]').forEach(b=>b.onclick=()=>v53OpenOrder(b.dataset.openId || b.dataset.openEdit));
+  $$('[data-open-void]').forEach(b=>b.onclick=(e)=>{ e.stopPropagation(); openVoidOrderModal(b.dataset.openVoid); });
+}
+renderOpenOrders = function(){
+  const f=window.swiftOpenOrderFilters;
+  const rows=v53OpenRows();
+  $('#centerScroll').innerHTML = `<div class="card subcard"><div class="module-title"><div><h3>Open Orders</h3><p class="muted-note" id="openOrderCount">${rows.length} open orders shown from ${(state.openOrders||[]).length}. Authorized users can void/cancel from POS.</p></div><button class="ghost-btn" onclick="openNewOrderModal()">New Order</button></div>${v53OpenControls(f)}<div id="openList" class="v53-open-list">${v53OpenListHtml(rows)}</div></div>`;
+  $('#openTypeFilter').value=f.type||'ALL';
+  $('#openSortFilter').value=f.sort||'oldest';
+  const bind=(id,key)=>{ const el=$('#'+id); if(!el) return; el.addEventListener(el.tagName==='INPUT'?'input':'change', e=>{ f[key]=e.target.value; const cap={selector:'#'+id,start:e.target.selectionStart,end:e.target.selectionEnd,scrollX:window.scrollX,scrollY:window.scrollY}; v53RefreshOpenOrders(); v51RestoreFocus(cap); }); };
+  bind('openSearchFilter','search'); bind('openFromFilter','from'); bind('openToFilter','to'); bind('openTypeFilter','type'); bind('openSortFilter','sort');
+  v53BindOpenActions();
+};
+
+function openVoidOrderModal(orderId){
+  const o=(state.openOrders||[]).find(x=>x.id===orderId) || (currentOrder && currentOrder.id===orderId ? currentOrder : null);
+  if(!o) return toast('Open order not found', true);
+  const t=calcTotals(o);
+  openModal(`<div class="modal-head"><h2>Void / Cancel Bill #${esc(o.number||'Draft')}</h2><button class="x" onclick="closeModal()">×</button></div>
+    <p class="muted-note">Use this only for open/held bills that should not be paid. Paid bills must use Refund.</p>
+    <div class="pay-total-card"><span>Bill Total</span><b>${money(t.total)}</b></div>
+    <div class="field"><label>Reason</label><input id="voidReason" value="Customer cancelled / order mistake"></div>
+    <div class="grid2"><div class="field"><label>Manager PIN</label><input id="voidPin" type="password" placeholder="Optional if approver login is used"></div><div class="field"><label>Approver Email</label><input id="voidEmail" type="email" placeholder="Manager/Admin email"></div></div>
+    <div class="field"><label>Approver Password</label><input id="voidPassword" type="password" placeholder="Manager/Admin password"></div>
+    <button class="danger-btn" id="doVoidOrder" style="width:100%">Void / Cancel Bill</button>`);
+  $('#doVoidOrder').onclick=async()=>{
+    try{
+      await api('/api/orders/void',{id:orderId,reason:$('#voidReason').value,managerPin:$('#voidPin').value,approverEmail:$('#voidEmail').value,approverPassword:$('#voidPassword').value});
+      if(currentOrder && currentOrder.id===orderId) currentOrder=null;
+      closeModal(); await loadState(); screen='pos'; centerMode='open'; renderShell(); toast('Bill voided / cancelled');
+    }catch(e){ toast(e.message,true); }
+  };
+}
+
+const __v53BaseRenderBill = renderBill;
+renderBill = function(){
+  __v53BaseRenderBill();
+  if(currentOrder && hasOrderLines(currentOrder)){
+    const row=document.querySelector('.bill-quick-actions');
+    if(row && !row.querySelector('#voidCurrentOrderBtn')){
+      const btn=document.createElement('button');
+      btn.className='danger-btn mini-action';
+      btn.id='voidCurrentOrderBtn';
+      btn.type='button';
+      btn.textContent='Void / Cancel';
+      btn.onclick=()=>openVoidOrderModal(currentOrder.id);
+      row.appendChild(btn);
+    }
+  }
+};
+
+document.addEventListener('keydown', function(e){
+  const el=e.target;
+  if(!el) return;
+  if(e.key === 'Enter' && ['paidSearchFilter','openSearchFilter'].includes(el.id)){
+    e.preventDefault();
+    v51RestoreFocus({selector:'#'+el.id,start:el.selectionStart,end:el.selectionEnd,scrollX:window.scrollX,scrollY:window.scrollY});
+  }
+}, true);
+
+document.documentElement.classList.add('v53-filter-void-audit');

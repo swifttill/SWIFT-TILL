@@ -1003,3 +1003,17 @@ input:focus,select:focus,textarea:focus,button:focus-visible{outline:3px solid r
   .v52-admin-list .admin-table.no-media th:last-child,
   .v52-admin-list .admin-table.no-media td:last-child{ min-width:132px; }
 }
+
+
+/* SwiftTill V53 filters and open void polish */
+.v53-filterbar{grid-template-columns:minmax(240px,1.5fr) repeat(5,minmax(130px,1fr));align-items:end;gap:10px;}
+.open-filterbar{grid-template-columns:minmax(260px,1.5fr) repeat(4,minmax(135px,1fr));}
+.v53-filterbar .field{margin:0;}
+.v53-open-list{display:grid;gap:10px;}
+.v53-open-order{display:grid;grid-template-columns:1fr auto;gap:10px;align-items:center;border:1px solid rgba(20,80,160,.14);border-radius:16px;background:#fff;padding:10px;}
+.v53-open-order .open-order-main{display:flex;align-items:center;justify-content:space-between;gap:12px;border:0;background:transparent;text-align:left;cursor:pointer;width:100%;min-width:0;}
+.v53-open-order .open-order-main h4,.v53-open-order .open-order-main p{margin:0;white-space:normal;overflow:visible;text-overflow:clip;}
+.open-order-actions,.paid-actions{display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end;}
+.v53-filterbar input,.v53-filterbar select{min-height:40px;}
+@media(max-width:980px){.v53-filterbar,.open-filterbar{grid-template-columns:1fr 1fr;}.v53-open-order{grid-template-columns:1fr}.open-order-actions{justify-content:flex-start}.paid-actions{justify-content:flex-start}}
+@media(max-width:560px){.v53-filterbar,.open-filterbar{grid-template-columns:1fr}.v53-open-order .open-order-main{flex-direction:column;align-items:flex-start}.open-order-actions .tiny,.paid-actions .tiny{min-width:112px}}

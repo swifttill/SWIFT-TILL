@@ -1,18 +1,9 @@
-SwiftTill V52 Client-Facing Admin Cleanup Validation
-
-API syntax: PASS
-DB client syntax: PASS
-DB adapter syntax: PASS
-Auth package syntax: PASS
-Storage/R2 syntax: PASS
-Print agent syntax: PASS
-Web JavaScript parse: PASS
-Auth smoke test: PASS
-ZIP integrity: PASS
-
-Manual audit focus:
-- Tables admin no longer shows Image column.
-- Non-image modules show only used fields.
-- Categories/Menu Items/Deals keep Image because POS uses them visually.
-- Search/filter focus preservation from V51 remains active.
-- Offline concept remains removed; online-only mode preserved.
+SwiftTill V53 Validation
+API syntax PASS
+Web JavaScript syntax PASS
+CSS present PASS
+ZIP integrity PASS
+Online-only preserved PASS
+Paid Orders filters/sorting added PASS
+Open Orders filters/sorting added PASS
+Open order void/cancel access guard added PASS
