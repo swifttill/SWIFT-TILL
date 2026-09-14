@@ -1,10 +1,13 @@
-SwiftTill POS V55 Validation
+SwiftTill POS V56 validation
 
-Scope: functionality stabilization after V54 one-line bill action patch.
-- API syntax check: PASS
-- Web JavaScript syntax check: PASS
-- Auth smoke test: PASS
-- Package integrity: PASS
-- Offline mode: removed / online-only preserved
-- Create Order draft preservation: patched
-- Cross-device sync draft clearing regression: patched
+API syntax: PASS
+Web JS syntax: PASS
+Auth smoke test: PASS
+ZIP integrity: PASS
+
+Scope check:
+- Online-only mode preserved
+- No offline module reintroduced
+- Category sidebar card gap/alignment fixed
+- All Items no-icon truncation fixed
+- Create Order stay-on-billing fix preserved

@@ -1,6 +1,17 @@
+# SwiftTill POS V56 — Online-only Category UI + Stability Audit
+
+V56 keeps the system online-only and does not add offline billing. This phase is a targeted UI/stability cleanup: the POS category sidebar cards are normalized, the All Items button no longer truncates because of a missing icon column, and the previous Create Order workflow remains stable.
+
+- Online-only POS preserved
+- No offline setup added
+- Category sidebar gap/alignment fixed
+- All Items truncation fixed
+- V55 Create Order stay-on-billing fix preserved
+- V54 one-line bill action buttons preserved
+
 # SwiftTill POS V55 — Functionality Stabilization + Regression Audit
 
-V55 is a surgical stabilization package after the one-line action bar change. It preserves V54 visual fix but prevents newly created draft orders from being cleared by live sync before items are added. Offline concept remains removed; system is online-only.
+V55 is a surgical stabilization package after the one-line action bar change. It preserves V54 visual fix but prevents newly created draft orders from being cleared by online refresh before items are added. Offline concept remains removed; system is online-only.
 
 # SwiftTill POS V54 — One-Line Bill Actions
 
@@ -80,7 +91,7 @@ This package rolls the app back to the stable pre-offline architecture. V41/V42/
 - Restored online-only POS operation.
 - Preserved V39 discount/payment/button guards.
 - Preserved V40 printer module hardening and client print-agent package.
-- Preserved Neon cloud-state persistence, R2 media handling, reports, admin, cross-device live sync, and paid-order/table/payment guards.
+- Preserved Neon cloud-state persistence, R2 media handling, reports, admin, cross-device online refresh, and paid-order/table/payment guards.
 - Offline use is intentionally blocked to avoid hidden local data, duplicate bills, sync conflicts, or reports mismatch.
 
 ## Expected status flags

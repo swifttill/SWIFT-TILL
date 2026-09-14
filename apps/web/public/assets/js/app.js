@@ -158,8 +158,8 @@ function renderSidebar(){
   <div class="search"><span>⌕</span><input id="menuSearch" placeholder="Search menu items..."></div>
   <div class="sidebar-scroll">
     <div class="section-title"><h3>Categories</h3><button id="showAll">View All</button></div>
-    <button class="cat-btn ${categoryId==='all'?'active':''}" data-cat="all"><span>All Items</span></button>
-    ${state.categories.filter(c=>c.active).sort((a,b)=>(a.sort||0)-(b.sort||0)).map(c=>`<button class="cat-btn ${categoryTone(c.name)} ${categoryId===c.id?'active':''}" data-cat="${esc(c.id)}">${c.imageUrl?`<img src="${esc(c.imageUrl)}" alt="">`:''}<span>${esc(c.name)}</span></button>`).join('')}
+    <button class="cat-btn no-icon ${categoryId==='all'?'active':''}" data-cat="all"><span>All Items</span></button>
+    ${state.categories.filter(c=>c.active).sort((a,b)=>(a.sort||0)-(b.sort||0)).map(c=>`<button class="cat-btn ${c.imageUrl?'':'no-icon'} ${categoryTone(c.name)} ${categoryId===c.id?'active':''}" data-cat="${esc(c.id)}">${c.imageUrl?`<img src="${esc(c.imageUrl)}" alt="">`:''}<span>${esc(c.name)}</span></button>`).join('')}
     <div class="divider"></div>
     <div class="section-title"><h3>Deals</h3></div>
     <button class="cat-btn no-icon ${centerMode==='deals'?'active':''}" id="dealsBtn"><span>Special Deals</span></button>
@@ -1639,8 +1639,8 @@ renderSidebar = function(){
   <div class="search"><span>⌕</span><input id="menuSearch" placeholder="Search menu items..." ${locked?'disabled':''}></div>
   <div class="sidebar-scroll">
     <div class="section-title"><h3>Categories</h3><button id="showAll">View All</button></div>
-    <button class="cat-btn ${categoryId==='all'?'active':''}" data-cat="all"><span>All Items</span></button>
-    ${state.categories.filter(c=>c.active).sort((a,b)=>(a.sort||0)-(b.sort||0)).map(c=>`<button class="cat-btn ${categoryTone(c.name)} ${categoryId===c.id?'active':''}" data-cat="${esc(c.id)}">${c.imageUrl?`<img src="${esc(c.imageUrl)}" alt="">`:''}<span>${esc(c.name)}</span></button>`).join('')}
+    <button class="cat-btn no-icon ${categoryId==='all'?'active':''}" data-cat="all"><span>All Items</span></button>
+    ${state.categories.filter(c=>c.active).sort((a,b)=>(a.sort||0)-(b.sort||0)).map(c=>`<button class="cat-btn ${c.imageUrl?'':'no-icon'} ${categoryTone(c.name)} ${categoryId===c.id?'active':''}" data-cat="${esc(c.id)}">${c.imageUrl?`<img src="${esc(c.imageUrl)}" alt="">`:''}<span>${esc(c.name)}</span></button>`).join('')}
     <div class="divider"></div>
     <div class="section-title"><h3>Deals</h3></div>
     <button class="cat-btn no-icon ${centerMode==='deals'?'active':''}" id="dealsBtn"><span>Special Deals</span></button>

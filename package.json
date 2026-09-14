@@ -1,8 +1,8 @@
 {
   "name": "swifttill-pos-monorepo",
-  "version": "55.0.0",
+  "version": "56.0.0",
   "private": true,
-  "description": "SwiftTill POS - V55 functionality stabilization, draft order preservation, and deep clean audit",
+  "description": "SwiftTill POS - V56 online-only category UI audit and stability polish",
   "workspaces": [
     "apps/api",
     "apps/web",
