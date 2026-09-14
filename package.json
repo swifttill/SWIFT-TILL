@@ -1,8 +1,8 @@
 {
   "name": "swifttill-pos-monorepo",
-  "version": "47.0.0",
+  "version": "48.0.0",
   "private": true,
-  "description": "SwiftTill POS V47: online-only auto logout after inactivity with warning, audit log and safe pre-logout cart save.",
+  "description": "SwiftTill POS - V48 tender-wise day close reports and cash drawer clarity",
   "workspaces": [
     "apps/api",
     "apps/web",

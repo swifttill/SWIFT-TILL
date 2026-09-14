@@ -1966,4 +1966,78 @@ renderLogin = function(){
   }
 };
 
+
+/* ============================================================
+   SwiftTill V48 Tender Close Day UI
+   Cash = physical drawer only. Card/Online = tender totals.
+============================================================ */
+function v48TenderRowHtml(label, x){
+  x = x || {};
+  return [label, reportMoney(x.sales || 0), reportMoney(x.refunds || 0), reportMoney(x.net || 0)];
+}
+function v48TenderTable(r){
+  const t = r.tenderSummary || {};
+  const rows = [
+    v48TenderRowHtml('Cash', t.cash),
+    v48TenderRowHtml('Card', t.card),
+    v48TenderRowHtml('Online', t.online)
+  ];
+  if((t.other?.sales || t.other?.refunds || t.other?.net)) rows.push(v48TenderRowHtml('Other', t.other));
+  return reportTable(['Tender','Sales','Refund','Net'], rows, ['TOTAL', reportMoney(t.all?.sales || 0), reportMoney(t.all?.refunds || 0), reportMoney(t.all?.net || 0)]);
+}
+function v48CashDrawerTable(r){
+  const sh = r.shiftSummary || {};
+  return reportTable(['Cash Drawer','Amount'], [
+    ['Day', sh.shiftNumber ? `#${sh.shiftNumber} ${sh.businessDate || ''}` : '—'],
+    ['Opening Cash Float', reportMoney(sh.openingCash)],
+    ['Cash Sales', reportMoney(sh.cashSales)],
+    ['Cash Refunds', reportMoney(sh.cashRefunds)],
+    ['Expected Drawer Cash', reportMoney(sh.expectedCash)],
+    ['Physical Cash Count', sh.countedCash == null ? 'Not closed' : reportMoney(sh.countedCash)],
+    ['Cash Difference', sh.difference == null ? 'Not closed' : reportMoney(sh.difference)]
+  ]);
+}
+function v46SummaryBlock(r){
+  const s = r.summary || {};
+  return `<div class="qb-two-col v46-summary v48-summary"><div>${reportTable(['Sales Summary','Amount'],[
+    ['Gross Sales',reportMoney(s.gross)],['Discount',reportMoney(s.discounts)],['Refund',reportMoney(s.refunds)],['Net Sales',reportMoney(s.net)],['Orders',s.orders||0],['Average Bill',reportMoney(s.averageBill)]
+  ])}</div><div>${v48TenderTable(r)}</div></div><div class="v48-cash-note">Cash drawer fields are only for physical till cash. Card/Online sales are recorded separately in Tender Summary and do not change drawer difference.</div><div class="qb-two-col v48-cash-row"><div>${v48CashDrawerTable(r)}</div><div>${reportTable(['Non-Cash','Amount'],[
+    ['Card Sales', reportMoney((r.shiftSummary||{}).cardSales)],['Card Refunds', reportMoney((r.shiftSummary||{}).cardRefunds)],['Online Sales', reportMoney((r.shiftSummary||{}).onlineSales)],['Online Refunds', reportMoney((r.shiftSummary||{}).onlineRefunds)],['Non-Cash Net', reportMoney((r.shiftSummary||{}).nonCashNet)]
+  ])}</div></div>`;
+}
+function openOpenShift(){
+  const today = new Date().toISOString().slice(0,10);
+  openModal(`<div class="modal-head"><h2>Open Day</h2><button class="x" onclick="closeModal()">×</button></div>
+  <p class="muted-note">Business Date se sale group hogi. Opening Cash Float sirf drawer/till mein start par rakhi physical cash amount hai. Card/Online yahan enter nahi karna.</p>
+  <div class="grid2"><div class="field"><label>Business Date</label><input id="businessDate" type="date" value="${today}"></div><div class="field"><label>Opening Cash Float</label><input id="openingCash" type="number" value="0" min="0"><small>Sirf physical cash drawer amount. Agar float nahi rakhte to 0 rehne do.</small></div></div>
+  <div class="field"><label>Opening Note</label><textarea id="dayNote" rows="2" placeholder="Optional note"></textarea></div>
+  <button class="primary-btn" style="width:100%" id="doOpenShift">Open Day & Start Billing</button>`);
+  $('#doOpenShift').onclick=async()=>{try{await api('/api/day/open',{businessDate:$('#businessDate').value,openingCash:Number($('#openingCash').value||0),note:$('#dayNote').value||''});closeModal();await loadState();renderShell();toast('Day opened. Billing unlocked.');}catch(e){toast(e.message,true);}};
+}
+function openCloseShift(){
+  const d=v46Day();
+  if(!d) return openOpenShift();
+  const openCount=(state.openOrders||[]).filter(o=>hasOrderLines(o)).length;
+  openModal(`<div class="modal-head"><h2>Close Day</h2><button class="x" onclick="closeModal()">×</button></div>
+  <p class="muted-note">${esc(v46DayLabel(d))}. Close Day par <b>Physical Cash Count</b> sirf drawer cash hai. Card/Online sales auto payment reports mein record hoti hain; counted cash mein add na karein.</p>
+  ${openCount?`<div class="empty-cart error-state"><b>${openCount} open bill(s)</b><p>Day close se pehle tamam open bills close/pay/void karo.</p></div>`:''}
+  <div class="field"><label>Physical Cash Count</label><input id="countedCash" type="number" value="0" min="0"><small>Drawer mein jo actual cash hai woh likho. Card/Online amount include na karo.</small></div>
+  <button class="primary-btn" style="width:100%" id="doCloseShift" ${openCount?'disabled':''}>Close Day</button>`);
+  const btn=$('#doCloseShift');
+  if(btn) btn.onclick=async()=>{try{const j=await api('/api/day/close',{countedCash:Number($('#countedCash').value||0)});closeModal();await loadState();renderShell();toast(`Day closed. Cash difference ${money(j.shift.difference)}`);}catch(e){toast(e.message,true);}};
+}
+function buildThermalReportHtml(r){
+  const s=r.summary||{}, sh=r.shiftSummary||{}, t=r.tenderSummary||{}; const title=currentReportTitle();
+  let body=`<div class="thermal-report v46-thermal v48-thermal"><div class="tr-center"><b>${esc(reportStoreName())}</b><br>${esc(state?.settings?.branchName||'')}</div><div class="tr-sep"></div>${thermalLine('REPORT',title)}${thermalLine('DAY',sh.businessDate||'')}${thermalLine('OPEN',sh.openedAt?new Date(sh.openedAt).toLocaleString():'')}${thermalLine('CLOSE',sh.closedAt?new Date(sh.closedAt).toLocaleString():'Open')}<div class="tr-sep"></div><div class="tr-title">SUMMARY</div>${thermalLine('Gross',reportMoney(s.gross))}${thermalLine('Discount',reportMoney(s.discounts))}${thermalLine('Refund',reportMoney(s.refunds))}${thermalLine('NET',reportMoney(s.net))}${thermalLine('Orders',s.orders||0)}`;
+  if(['daily','payment','x','z','custom'].includes(reportType)) body+=`<div class="tr-sep"></div><div class="tr-title">TENDER SUMMARY</div>${thermalLine('Cash Sales',reportMoney(t.cash?.sales||sh.cashSales))}${thermalLine('Card Sales',reportMoney(t.card?.sales||sh.cardSales))}${thermalLine('Online Sales',reportMoney(t.online?.sales||sh.onlineSales))}${thermalLine('Tender Refund',reportMoney(t.all?.refunds||s.refunds))}${thermalLine('Tender Net',reportMoney(t.all?.net||s.net))}<div class="tr-sep"></div><div class="tr-title">CASH DRAWER ONLY</div>${thermalLine('Opening Float',reportMoney(sh.openingCash))}${thermalLine('Cash Sales',reportMoney(sh.cashSales))}${thermalLine('Cash Refund',reportMoney(sh.cashRefunds))}${thermalLine('Expected Cash',reportMoney(sh.expectedCash))}${thermalLine('Physical Count',sh.countedCash==null?'Not closed':reportMoney(sh.countedCash))}${thermalLine('Cash Diff.',sh.difference==null?'Not closed':reportMoney(sh.difference))}`;
+  if(reportType==='itemwise') body+=`<div class="tr-sep"></div>`+thermalTableBlock('ITEM SALES',(r.itemWise||[]).slice(0,25).map(i=>[i.item,`x${i.qty}`,reportMoney(i.net)]),3);
+  else if(reportType==='category') body+=`<div class="tr-sep"></div>`+thermalTableBlock('CATEGORY',(r.categoryDetails||[]).slice(0,20).map(c=>[c.category,`x${c.qty}`,reportMoney(c.net)]),3);
+  else if(reportType==='ordertype') body+=`<div class="tr-sep"></div>`+thermalTableBlock('ORDER TYPE',(r.orderTypeDetails||[]).map(o=>[formatType(o.type),`${o.orders} bills`,reportMoney(o.net)]),3);
+  else if(reportType==='discount') body+=`<div class="tr-sep"></div>`+thermalTableBlock('DISCOUNT',(r.discountWise?.rows||[]).slice(0,25).map(o=>[`#${o.number}`,formatType(o.type),reportMoney(o.discount)]),3);
+  else if(reportType==='voidrefund') body+=`<div class="tr-sep"></div>`+thermalTableBlock('VOID/REFUND',reportRefundRows(r).slice(0,25).map(x=>[`${x[0]} #${x[1]}`,x[5],x[4]]),3);
+  else body+=`<div class="tr-sep"></div>`+thermalTableBlock('PAYMENTS',reportPaymentRows(r).map(p=>[p[0],`${p[1]} trx`,p[4]]),3);
+  body+=`<div class="tr-sep"></div><div class="tr-center small">Cash count excludes Card/Online.<br>${esc(state?.settings?.reportFooter || 'Generated by SwiftTill POS')}</div></div>`;
+  return body;
+}
+
 boot();

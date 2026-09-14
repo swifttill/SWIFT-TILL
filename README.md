@@ -1,3 +1,15 @@
+# SwiftTill POS — V48 Tender Close Day Reports
+
+V48 keeps the system online-only and improves Day Close and reports:
+
+- Opening Cash renamed/clarified as Opening Cash Float: physical cash in drawer at day start.
+- Close Day counted cash renamed/clarified as Physical Cash Count: cash drawer only.
+- Card and Online sales are recorded separately in Tender Summary.
+- Cash drawer difference is calculated only from physical cash: opening float + cash sales - cash refunds - physical count.
+- Card/Online do not affect drawer cash difference but remain in sales/payment reports.
+- A4 and thermal report output now shows Tender Summary plus Cash Drawer Only section.
+- Offline concept remains removed; this is online-only stable build.
+
 # SwiftTill POS V47 — Auto Logout Inactivity Security
 
 V47 keeps the online-only V46 day-open/day-close build and adds automatic POS security logout after inactivity.

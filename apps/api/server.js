@@ -15,7 +15,7 @@ const STORAGE_DIR = path.join(ROOT, 'storage', 'uploads');
 const DB_PATH = path.join(DATA_DIR, 'db.json');
 const PORT = Number(process.env.PORT || 5174);
 const TOKENS = new Map();
-const APP_VERSION = '47.0.0-auto-logout-inactivity-security';
+const APP_VERSION = '48.0.0-tender-close-day-reports';
 const CLOUD_STATE_KEY = process.env.SWIFTTILL_STATE_KEY || 'swift-till-main';
 let cloudStateCache = null;
 let cloudStateInitPromise = null;
@@ -779,7 +779,7 @@ function finalAuditStatus(db) {
   if (activeOrdersWithZeroTotal) remaining.push('active orders with zero total need review');
   if (!hasR2Config()) remaining.push('Cloudflare R2 not configured');
   if (!printAgentKey(db)) remaining.push('cloud print agent key missing');
-  return { ok: remaining.length === 0, version: APP_VERSION, audit: { passwordsHashed: (db.users || []).every(u => Boolean(u.passwordHash) && !u.password), pinsHiddenFromClient: true, technicalBackupControlsHiddenFromClient: true, paidVoidBlocked: true, refundOverrunBlocked: true, tableDoubleBookingGuard: true, shiftCashRefundReconciliation: true, mediaCleanup: true, historyPreservedAfterCatalogDelete: true, cloudPrintQueue: true, reportTotalsFooters: true, mobileFriendlyPos: true, mobileCartDrawer: true, clientOnlyAdmin: true, r2HardDeleteOnReplace: true, r2HardDeleteOnDelete: true, r2DailyOrphanCleanup: true, taxFiscalFieldsReady: true, tenantStateKeyReady: true, defaultPasswordSetupGuard: true, enlargedFavicon: true, originalLogoFaviconMaxFill: true, reportsSubmenuInLeftAdminNav: true, reportOrganizationLogo: true, operationalScenarioMatrix: true, mobileBackCloseControls: true, mobileCategoryFirstFlow: true, mobileOpenBillsPayFlow: true, mobileAddItemsStayOnMenu: true, mobileBillDrawerManualOnly: true, crossDeviceLiveSync: true, autoCartSave: true, paidOrderRemoteClose: true, openBillsRealtimeRefresh: true, discountTypeSwitchResetsValue: true, fixedDiscountClampedToBill: true, percentDiscountMax100: true, cashRevenueChangeSafe: true, buttonTextVisibilitySafe: true, printerModule99Ready: true, cloudPrintRetryQueue: true, localSpoolRecovery: true, windowsDefaultPrinterDiagnostics: true, offlineModeRemovedRollbackV45: true, onlineOnlyModeRestored: true, noLocalOfflineBilling: true, autoLogoutInactivityV47: true, inactivityTimeoutMinutes: 12, inactivityWarningBeforeLogout: true, idleLogoutClearsToken: true, idleLogoutAudited: true, setup }, counts: { categories: (db.categories || []).length, items: (db.items || []).length, deals: (db.deals || []).length, tables: (db.tables || []).length, openOrders: (db.orders || []).filter(o => ['OPEN','HELD'].includes(o.status) && hasBillLines(o)).length, paidOrders: (db.orders || []).filter(o => o.status === 'PAID').length, refunds: (db.refunds || []).length, pendingPrintJobs: (db.printJobs || []).filter(j => ['PENDING','PRINTING'].includes(j.status)).length }, remaining };
+  return { ok: remaining.length === 0, version: APP_VERSION, audit: { passwordsHashed: (db.users || []).every(u => Boolean(u.passwordHash) && !u.password), pinsHiddenFromClient: true, technicalBackupControlsHiddenFromClient: true, paidVoidBlocked: true, refundOverrunBlocked: true, tableDoubleBookingGuard: true, shiftCashRefundReconciliation: true, mediaCleanup: true, historyPreservedAfterCatalogDelete: true, cloudPrintQueue: true, reportTotalsFooters: true, mobileFriendlyPos: true, mobileCartDrawer: true, clientOnlyAdmin: true, r2HardDeleteOnReplace: true, r2HardDeleteOnDelete: true, r2DailyOrphanCleanup: true, taxFiscalFieldsReady: true, tenantStateKeyReady: true, defaultPasswordSetupGuard: true, enlargedFavicon: true, originalLogoFaviconMaxFill: true, reportsSubmenuInLeftAdminNav: true, reportOrganizationLogo: true, operationalScenarioMatrix: true, mobileBackCloseControls: true, mobileCategoryFirstFlow: true, mobileOpenBillsPayFlow: true, mobileAddItemsStayOnMenu: true, mobileBillDrawerManualOnly: true, crossDeviceLiveSync: true, autoCartSave: true, paidOrderRemoteClose: true, openBillsRealtimeRefresh: true, discountTypeSwitchResetsValue: true, fixedDiscountClampedToBill: true, percentDiscountMax100: true, cashRevenueChangeSafe: true, buttonTextVisibilitySafe: true, printerModule99Ready: true, cloudPrintRetryQueue: true, localSpoolRecovery: true, windowsDefaultPrinterDiagnostics: true, offlineModeRemovedRollbackV45: true, onlineOnlyModeRestored: true, noLocalOfflineBilling: true, autoLogoutInactivityV47: true, tillTenderCloseDayV48: true, countedCashPhysicalOnly: true, cardOnlineTenderRecorded: true, tenderWiseCloseSummary: true, reportsTenderSummaryV48: true, closeDayCashDrawerOnly: true, inactivityTimeoutMinutes: 12, inactivityWarningBeforeLogout: true, idleLogoutClearsToken: true, idleLogoutAudited: true, setup }, counts: { categories: (db.categories || []).length, items: (db.items || []).length, deals: (db.deals || []).length, tables: (db.tables || []).length, openOrders: (db.orders || []).filter(o => ['OPEN','HELD'].includes(o.status) && hasBillLines(o)).length, paidOrders: (db.orders || []).filter(o => o.status === 'PAID').length, refunds: (db.refunds || []).length, pendingPrintJobs: (db.printJobs || []).filter(j => ['PENDING','PRINTING'].includes(j.status)).length }, remaining };
 }
 
 
@@ -823,7 +823,7 @@ async function handleApi(req, res, pathname, query) {
     if (pathname === '/api/env-check' && req.method === 'GET') return send(res, 200, { ok: true, environment: { nodeEnv: process.env.NODE_ENV || 'development', databaseUrl: hasDatabaseUrl() ? 'loaded' : 'missing', dataStore: shouldUseCloudState() ? 'postgresql-cloud-state' : 'local-json', r2: hasR2Config() ? 'configured' : 'missing', production: productionMode() }, note: 'Safe status only. No secrets are returned.' });
     const db = await loadDb();
     assertOrderEngineState(db);
-    if (pathname === '/api/order-engine/status' && req.method === 'GET') return send(res, 200, { ok: true, version: APP_VERSION, store: shouldUseCloudState() ? 'postgresql-cloud-state' : 'local-json', rules: { oneTableOneActiveDineInOrder: true, paymentChangeCashOnly: true, paidOrdersLocked: true, tableReleasedAfterFullPayment: true, synchronousPersistence: true, hardcodedBusinessData: false, zeroPriceBlocked: true, emptyHoldBlocked: true, unpaidBillPrint: true, printAreaSafe: true, reportsVisible: true, mediaCleanup: true, automaticBackups: true, reportHistoryPreservedAfterItemDelete: true, fastUiNoFullScreenBlock: true, reportsAdminPanelFixed: true, cloudCredentialsHiddenFromClient: true, directPrintAgentDefault: true, softBusyIndicator: true, structuredReports: true, reportSubMenus: true, reportSpecificFilters: true, excelPerReport: true, billStyleReportPrint: true, professionalReports: true, reportTotalsFooters: true, xzCloseoutSections: true, cashDrawerReconciliation: true, full360Audit: true, secureSessionTokens: true, passwordsHashed: true, pinsHiddenFromClient: true, managerPinHidden: true, draftOrdersDoNotOccupyTables: true, cloudPrintQueue: true, autoBackupPersistenceFixed: true, lastAdminProtection: true, categoryDeleteGuard: true, posReportsRemoved: true, adminOnlyReports: true, professionalUiPolish: true, fastSoftBusyIndicator: true, imageAspectSafe: true, quickbooksStylePdfReports: true, thermalReportSlipPrint: true, noBoxPrintReports: true, formattingTemplateAudit: true, modernPosUiSystem: true, compactHeader: true, categoryColorSystem: true, adminBackOfficePolish: true, sameScreenWorkflowPolish: true, visibleIconsMarginsAudit: true, compactCartPanel: true, orderInfoGrid: true, singleLineBillActions: true, clientBackupActionsHidden: true, modernPosCompression: true, extremeCartCompression: true, largerVisibleBillItems: true, compactOrderMetaOneLine: true, compactTotalsActions: true, mediaFrameSafe: true, adminItemCategoryFilter: true, adminListSorting: true, faviconBranding: true, originalLogoFaviconMaxFill: true, receiptReportBranding: true, final360Audit: true, paidVoidBlocked: true, refundOverrunBlocked: true, refundedBillReopenBlocked: true, paymentCorrectionAfterRefundBlocked: true, technicalBackupControlsHiddenFromClient: true, shiftCashRefundReconciliation: true, mobileFriendlyPos: true, mobileCartDrawer: true, mobileResponsiveAdmin: true, clientOnlyAdmin: true, taxFiscalFieldsReady: true, tenantStateKeyReady: true, finalNotesCodeSideClosed: true, r2HardDeleteOnReplace: true, r2HardDeleteOnDelete: true, r2DailyOrphanCleanup: true, reportHistoryWithoutMediaDependency: true, enlargedFavicon: true, originalLogoFaviconMaxFill: true, reportsSubmenuInLeftAdminNav: true, reportOrganizationLogo: true, operationalScenarioMatrix: true, mobileBackCloseControls: true, mobileCategoryFirstFlow: true, mobileOpenBillsPayFlow: true, mobileAddItemsStayOnMenu: true, mobileBillDrawerManualOnly: true, crossDeviceLiveSync: true, autoCartSave: true, paidOrderRemoteClose: true, openBillsRealtimeRefresh: true, discountTypeSwitchResetsValue: true, fixedDiscountClampedToBill: true, percentDiscountMax100: true, cashRevenueChangeSafe: true, buttonTextVisibilitySafe: true, printerModule99Ready: true, clientPrintAgentFinalPackage: true, cloudPrintRetryQueue: true, localSpoolRecovery: true, windowsDefaultPrinterDiagnostics: true, offlineModeRemovedRollbackV45: true, onlineOnlyModeRestored: true, noLocalOfflineBilling: true, businessDayOpenCloseV46: true, workBlockedWithoutOpenDay: true, afterMidnightDaySales: true, compactReportsV46: true, reportPrintWasteReduced: true, offlineConceptForgotten: true, autoLogoutInactivityV47: true, inactivityTimeoutMinutes: 12, inactivityWarningBeforeLogout: true, idleLogoutClearsToken: true, idleLogoutAudited: true, unsavedCartProtectedBeforeIdleLogout: true }, counts: { openOrders: db.orders.filter(o => ['OPEN','HELD'].includes(o.status) && hasBillLines(o)).length, paidOrders: db.orders.filter(o => o.status === 'PAID').length, categories: db.categories.length, items: db.items.length, pricedActiveItems: activePricedItems(db).length, deals: db.deals.length, pricedActiveDeals: activePricedDeals(db).length, tables: db.tables.length } });
+    if (pathname === '/api/order-engine/status' && req.method === 'GET') return send(res, 200, { ok: true, version: APP_VERSION, store: shouldUseCloudState() ? 'postgresql-cloud-state' : 'local-json', rules: { oneTableOneActiveDineInOrder: true, paymentChangeCashOnly: true, paidOrdersLocked: true, tableReleasedAfterFullPayment: true, synchronousPersistence: true, hardcodedBusinessData: false, zeroPriceBlocked: true, emptyHoldBlocked: true, unpaidBillPrint: true, printAreaSafe: true, reportsVisible: true, mediaCleanup: true, automaticBackups: true, reportHistoryPreservedAfterItemDelete: true, fastUiNoFullScreenBlock: true, reportsAdminPanelFixed: true, cloudCredentialsHiddenFromClient: true, directPrintAgentDefault: true, softBusyIndicator: true, structuredReports: true, reportSubMenus: true, reportSpecificFilters: true, excelPerReport: true, billStyleReportPrint: true, professionalReports: true, reportTotalsFooters: true, xzCloseoutSections: true, cashDrawerReconciliation: true, full360Audit: true, secureSessionTokens: true, passwordsHashed: true, pinsHiddenFromClient: true, managerPinHidden: true, draftOrdersDoNotOccupyTables: true, cloudPrintQueue: true, autoBackupPersistenceFixed: true, lastAdminProtection: true, categoryDeleteGuard: true, posReportsRemoved: true, adminOnlyReports: true, professionalUiPolish: true, fastSoftBusyIndicator: true, imageAspectSafe: true, quickbooksStylePdfReports: true, thermalReportSlipPrint: true, noBoxPrintReports: true, formattingTemplateAudit: true, modernPosUiSystem: true, compactHeader: true, categoryColorSystem: true, adminBackOfficePolish: true, sameScreenWorkflowPolish: true, visibleIconsMarginsAudit: true, compactCartPanel: true, orderInfoGrid: true, singleLineBillActions: true, clientBackupActionsHidden: true, modernPosCompression: true, extremeCartCompression: true, largerVisibleBillItems: true, compactOrderMetaOneLine: true, compactTotalsActions: true, mediaFrameSafe: true, adminItemCategoryFilter: true, adminListSorting: true, faviconBranding: true, originalLogoFaviconMaxFill: true, receiptReportBranding: true, final360Audit: true, paidVoidBlocked: true, refundOverrunBlocked: true, refundedBillReopenBlocked: true, paymentCorrectionAfterRefundBlocked: true, technicalBackupControlsHiddenFromClient: true, shiftCashRefundReconciliation: true, mobileFriendlyPos: true, mobileCartDrawer: true, mobileResponsiveAdmin: true, clientOnlyAdmin: true, taxFiscalFieldsReady: true, tenantStateKeyReady: true, finalNotesCodeSideClosed: true, r2HardDeleteOnReplace: true, r2HardDeleteOnDelete: true, r2DailyOrphanCleanup: true, reportHistoryWithoutMediaDependency: true, enlargedFavicon: true, originalLogoFaviconMaxFill: true, reportsSubmenuInLeftAdminNav: true, reportOrganizationLogo: true, operationalScenarioMatrix: true, mobileBackCloseControls: true, mobileCategoryFirstFlow: true, mobileOpenBillsPayFlow: true, mobileAddItemsStayOnMenu: true, mobileBillDrawerManualOnly: true, crossDeviceLiveSync: true, autoCartSave: true, paidOrderRemoteClose: true, openBillsRealtimeRefresh: true, discountTypeSwitchResetsValue: true, fixedDiscountClampedToBill: true, percentDiscountMax100: true, cashRevenueChangeSafe: true, buttonTextVisibilitySafe: true, printerModule99Ready: true, clientPrintAgentFinalPackage: true, cloudPrintRetryQueue: true, localSpoolRecovery: true, windowsDefaultPrinterDiagnostics: true, offlineModeRemovedRollbackV45: true, onlineOnlyModeRestored: true, noLocalOfflineBilling: true, businessDayOpenCloseV46: true, workBlockedWithoutOpenDay: true, afterMidnightDaySales: true, compactReportsV46: true, reportPrintWasteReduced: true, offlineConceptForgotten: true, autoLogoutInactivityV47: true, tillTenderCloseDayV48: true, countedCashPhysicalOnly: true, cardOnlineTenderRecorded: true, tenderWiseCloseSummary: true, reportsTenderSummaryV48: true, closeDayCashDrawerOnly: true, inactivityTimeoutMinutes: 12, inactivityWarningBeforeLogout: true, idleLogoutClearsToken: true, idleLogoutAudited: true, unsavedCartProtectedBeforeIdleLogout: true }, counts: { openOrders: db.orders.filter(o => ['OPEN','HELD'].includes(o.status) && hasBillLines(o)).length, paidOrders: db.orders.filter(o => o.status === 'PAID').length, categories: db.categories.length, items: db.items.length, pricedActiveItems: activePricedItems(db).length, deals: db.deals.length, pricedActiveDeals: activePricedDeals(db).length, tables: db.tables.length } });
     if (pathname === '/api/audit/status' && req.method === 'GET') return send(res, 200, finalAuditStatus(db));
     if (pathname === '/api/audit/final-360' && req.method === 'GET') return send(res, 200, finalAuditStatus(db));
     if (pathname === '/api/ops/scenarios' && req.method === 'GET') return send(res, 200, operationalScenarioMatrix(db));
@@ -838,7 +838,52 @@ async function handleApi(req, res, pathname, query) {
     if (pathname === '/api/upload-image' && req.method === 'POST') { requirePerm(db, user, 'admin.menu'); const body = await parseBody(req); const match = String(body.dataUrl || '').match(/^data:(image\/[a-zA-Z0-9.+-]+);base64,(.+)$/); if (!match) throw Object.assign(new Error('Invalid image data'), { status: 422 }); const contentType = match[1]; const bytes = Buffer.from(match[2], 'base64'); assertImage({ contentType, bytes }); const ext = contentType.split('/')[1].replace('jpeg', 'jpg').replace('svg+xml', 'svg'); const folder = ['category','item','deal','logo','receipt'].includes(body.folder) ? body.folder : 'uploads'; const fallbackName = `${Date.now()}-${safeName(body.filename || 'image').replace(/\.[a-z0-9]+$/i, '')}.${ext}`; if (hasR2Config()) { const key = makeMediaKey({ tenant: 'swifttill', folder, filename: body.filename || fallbackName }); const uploaded = await uploadImageToR2({ key, body: bytes, contentType }); audit(db, user, 'R2_IMAGE_UPLOADED', { key: uploaded.key, url: uploaded.url, folder }); await saveDb(db); return send(res, 200, { ok: true, storage: 'r2', url: uploaded.url || publicUrlForKey(uploaded.key), key: uploaded.key }); } if (productionMode()) throw Object.assign(new Error('Cloudflare R2 is required for production uploads'), { status: 503 }); ensureDir(path.join(PUBLIC_DIR, 'uploads')); fs.writeFileSync(path.join(PUBLIC_DIR, 'uploads', fallbackName), bytes); audit(db, user, 'LOCAL_IMAGE_UPLOADED_DEV_ONLY', { file: fallbackName, folder }); await saveDb(db); return send(res, 200, { ok: true, storage: 'local-dev', url: `/uploads/${fallbackName}`, key: fallbackName }); }
 
     if ((pathname === '/api/day/open' || pathname === '/api/shift/open') && req.method === 'POST') { requirePerm(db, user, 'pos.pay'); const body = await parseBody(req); if (activeShift(db)) throw Object.assign(new Error('A business day is already open. Close the current day first.'), { status: 409 }); const businessDate = validateBusinessDate(body.businessDate || localDateKey()); const shift = { id: uid('day'), number: db.shifts.length + 1, type: 'BUSINESS_DAY', status: 'OPEN', businessDate, dayLabel: businessDate, cashierId: user.id, cashierName: user.name, openedBy: user.name, openingCash: money(body.openingCash), openedAt: now(), note: body.note || '' }; db.shifts.push(shift); audit(db, user, 'DAY_OPENED', shift); await saveDb(db, 'business-day-opened'); return send(res, 200, { ok: true, shift, day: shift }); }
-    if ((pathname === '/api/day/close' || pathname === '/api/shift/close') && req.method === 'POST') { requirePerm(db, user, 'pos.pay'); const body = await parseBody(req); const shift = activeShift(db); if (!shift) throw Object.assign(new Error('No open business day'), { status: 409 }); const openBills = db.orders.filter(o => ['OPEN','HELD','DRAFT'].includes(o.status) && hasBillLines(o)); if (openBills.length) throw Object.assign(new Error(`Close/pay/void all open bills before day close. Open bills: ${openBills.length}`), { status: 409 }); if (body.countedCash === undefined || body.countedCash === null || body.countedCash === '') throw Object.assign(new Error('Counted cash is required to close day'), { status: 422 }); const rd = reportData(db, { shiftId: shift.id }); const cashSales = rd.paymentWise.Cash || 0; const cashRefunds = rd.shiftSummary?.cashRefunds || 0; shift.status = 'CLOSED'; shift.countedCash = money(body.countedCash); shift.expectedCash = money(Number(shift.openingCash) + cashSales - cashRefunds); shift.difference = money(shift.countedCash - shift.expectedCash); shift.closedAt = now(); shift.closedBy = user.name; shift.closeSummary = { orders: rd.summary.orders, gross: rd.summary.gross, discounts: rd.summary.discounts, refunds: rd.summary.refunds, net: rd.summary.net, cashSales, cashRefunds, expectedCash: shift.expectedCash, countedCash: shift.countedCash, difference: shift.difference }; audit(db, user, 'DAY_CLOSED', shift.closeSummary); await saveDb(db, 'business-day-closed'); return send(res, 200, { ok: true, shift, day: shift, report: rd }); }
+    if ((pathname === '/api/day/close' || pathname === '/api/shift/close') && req.method === 'POST') {
+      requirePerm(db, user, 'pos.pay');
+      const body = await parseBody(req);
+      const shift = activeShift(db);
+      if (!shift) throw Object.assign(new Error('No open business day'), { status: 409 });
+      const openBills = db.orders.filter(o => ['OPEN','HELD','DRAFT'].includes(o.status) && hasBillLines(o));
+      if (openBills.length) throw Object.assign(new Error(`Close/pay/void all open bills before day close. Open bills: ${openBills.length}`), { status: 409 });
+      if (body.countedCash === undefined || body.countedCash === null || body.countedCash === '') throw Object.assign(new Error('Physical cash count is required to close day'), { status: 422 });
+      const rd = reportData(db, { shiftId: shift.id });
+      const sh = rd.shiftSummary || {};
+      shift.status = 'CLOSED';
+      shift.countedCash = money(body.countedCash);
+      shift.expectedCash = money(sh.expectedCash || 0);
+      shift.difference = money(shift.countedCash - shift.expectedCash);
+      shift.cardSales = money(sh.cardSales || 0);
+      shift.cardRefunds = money(sh.cardRefunds || 0);
+      shift.onlineSales = money(sh.onlineSales || 0);
+      shift.onlineRefunds = money(sh.onlineRefunds || 0);
+      shift.nonCashSales = money(sh.nonCashSales || 0);
+      shift.closedAt = now();
+      shift.closedBy = user.name;
+      shift.closeSummary = {
+        orders: rd.summary.orders,
+        gross: rd.summary.gross,
+        discounts: rd.summary.discounts,
+        refunds: rd.summary.refunds,
+        net: rd.summary.net,
+        totalReceived: rd.summary.totalReceived,
+        changeReturned: rd.summary.changeReturned,
+        cashSales: money(sh.cashSales || 0),
+        cashRefunds: money(sh.cashRefunds || 0),
+        expectedCash: shift.expectedCash,
+        countedCash: shift.countedCash,
+        difference: shift.difference,
+        cardSales: shift.cardSales,
+        cardRefunds: shift.cardRefunds,
+        onlineSales: shift.onlineSales,
+        onlineRefunds: shift.onlineRefunds,
+        nonCashSales: shift.nonCashSales,
+        tenderSummary: rd.tenderSummary || null,
+        note: 'Counted cash is physical drawer cash only. Card/online are recorded separately in tender summary.'
+      };
+      audit(db, user, 'DAY_CLOSED', shift.closeSummary);
+      await saveDb(db, 'business-day-closed');
+      return send(res, 200, { ok: true, shift, day: shift, report: rd });
+    }
 
     if (pathname === '/api/orders/create' && req.method === 'POST') { requirePerm(db, user, 'pos.create'); const b = await parseBody(req); const businessDay = requireOpenBusinessDay(db); if (!['DINE_IN','DELIVERY','TAKEAWAY'].includes(b.type)) throw Object.assign(new Error('Invalid order type'), { status: 422 }); if (b.type === 'DINE_IN') { if (!b.tableId) throw Object.assign(new Error('Dine In order requires table selection'), { status: 422 }); const table = db.tables.find(t => t.id === b.tableId && t.active); if (!table) throw Object.assign(new Error('Selected table not found'), { status: 404 }); const busy = db.orders.find(o => ['OPEN','HELD'].includes(o.status) && o.type === 'DINE_IN' && o.tableId === b.tableId && hasBillLines(o)); if (busy) throw Object.assign(new Error('This table already has an active order'), { status: 409 }); } const taker = db.orderTakers.find(t => t.id === b.orderTakerId); const createdAt = now(); const order = { id: uid('ord'), number: '', type: b.type, status: 'DRAFT', tableId: b.type === 'DINE_IN' ? b.tableId : null, guests: b.type === 'DINE_IN' ? Number(b.guests || 1) : 0, orderTakerId: b.orderTakerId || null, orderTakerName: taker?.name || '', customerName: b.customerName || '', mobile: b.mobile || '', address: b.address || '', deliveryNotes: b.deliveryNotes || '', deliveryFee: b.type === 'DELIVERY' ? money(b.deliveryFee ?? db.settings.defaultDeliveryFee) : 0, lines: [], discountType: 'NONE', discountValue: 0, createdAt, businessDayId: businessDay.id, shiftId: businessDay.id, businessDate: businessDay.businessDate, businessDayNumber: businessDay.number, tableOccupiedAt: null, cashierId: user.id, cashierName: user.name, timeline: [{ event: 'CREATED', at: createdAt, by: user.name }] }; db.orders.push(order); audit(db, user, 'ORDER_DRAFT_CREATED', { orderId: order.id, type: order.type }); await saveDb(db); return send(res, 200, { ok: true, order }); }
     if (pathname === '/api/orders/save' && req.method === 'POST') { requirePerm(db, user, 'pos.edit'); const b = await parseBody(req); const order = db.orders.find(o => o.id === b.id); if (!order) throw Object.assign(new Error('Order not found'), { status: 404 }); const businessDay = requireOpenBusinessDay(db); if (order.status === 'PAID') throw Object.assign(new Error('Paid order cannot be edited'), { status: 409 }); const nextType = b.type || order.type; const nextTableId = b.tableId ?? order.tableId; if (nextType === 'DINE_IN' && !nextTableId) throw Object.assign(new Error('Dine In order requires table selection'), { status: 422 }); const oldTable = order.tableId; if (nextType === 'DINE_IN' && nextTableId && nextTableId !== order.tableId) { const table = db.tables.find(t => t.id === nextTableId && t.active); if (!table) throw Object.assign(new Error('Selected table not found'), { status: 404 }); const busy = db.orders.find(o => o.id !== order.id && ['OPEN','HELD'].includes(o.status) && o.type === 'DINE_IN' && o.tableId === nextTableId && hasBillLines(o)); if (busy) throw Object.assign(new Error('Target table is busy'), { status: 409 }); } Object.assign(order, { type: nextType, tableId: nextType === 'DINE_IN' ? nextTableId : null, guests: nextType === 'DINE_IN' ? Number((b.guests ?? order.guests) || 1) : 0, orderTakerId: b.orderTakerId ?? order.orderTakerId, orderTakerName: b.orderTakerName ?? order.orderTakerName, customerName: b.customerName ?? order.customerName, mobile: b.mobile ?? order.mobile, address: b.address ?? order.address, deliveryFee: nextType === 'DELIVERY' ? money(b.deliveryFee ?? order.deliveryFee) : 0, lines: Array.isArray(b.lines) ? normalizeOrderLines(b.lines) : normalizeOrderLines(order.lines), discountType: b.discountType || order.discountType, discountValue: money(b.discountValue ?? order.discountValue), updatedAt: now() }); sanitizeDiscount(order); assignOrderBusinessDay(order, businessDay); assertTableAvailableForActiveOrder(db, order, order.tableId, 'This table already has an active order'); if (order.type === 'DINE_IN' && order.tableId && !order.tableOccupiedAt && hasBillLines(order)) order.tableOccupiedAt = oldTable && oldTable !== order.tableId ? (order.createdAt || now()) : now(); if (oldTable && oldTable !== order.tableId) order.timeline.push({ event: 'TABLE_TRANSFERRED', at: now(), by: user.name, from: oldTable, to: order.tableId }); ensureOrderNumber(db, order);
@@ -1177,4 +1222,164 @@ function reportData(db, filters = {}) {
   const expectedCashForSummary = money(openingCashForSummary + cashSalesForSummary - cashRefunds);
   const orders = paid.map(o => ({ number: o.number, date: o.paidAt, businessDate: o.businessDate || '', businessDayId: o.businessDayId || o.shiftId || '', type: o.type, table: (db.tables || []).find(t => t.id === o.tableId)?.name || '', customer: o.customerName || '', mobile: o.mobile || '', cashier: o.cashierName || '', orderTaker: o.orderTakerName || '', guests: o.guests || 0, subtotal: totals(o).subtotal, discount: totals(o).discount, deliveryFee: totals(o).deliveryFee, total: totals(o).total, payments: (o.payments || []).map(p => `${p.method}:${p.amount}${p.change?` change:${p.change}`:''}`).join(', ') }));
   return { range: { from, to }, filters, businessDay: shiftForSummary ? { id: shiftForSummary.id, number: shiftForSummary.number, businessDate: shiftForSummary.businessDate || '', openedAt: shiftForSummary.openedAt || '', closedAt: shiftForSummary.closedAt || '', status: shiftForSummary.status || '' } : null, shiftSummary: { shiftId: shiftForSummary?.id || '', shiftNumber: shiftForSummary?.number || '', shiftStatus: shiftForSummary?.status || '', businessDate: shiftForSummary?.businessDate || '', openingCash: money(openingCashForSummary), cashSales: money(cashSalesForSummary), cashRefunds, expectedCash: expectedCashForSummary, countedCash: shiftForSummary?.countedCash ?? null, difference: shiftForSummary?.difference ?? null, openedAt: shiftForSummary?.openedAt || '', closedAt: shiftForSummary?.closedAt || '' }, summary: { orders: paid.length, guests, gross: money(gross), discounts: money(discounts), refunds: money(refundAmount), net: money(net), averageBill: paid.length ? money(net / paid.length) : 0, averageGuest: guests ? money(net / guests) : 0, totalReceived: money(totalReceived), changeReturned }, paymentWise, paymentDetails: Object.values(paymentDetails), itemWise: Object.values(itemWise).sort((a,b) => b.net - a.net), categoryWise, categoryDetails: Object.values(categoryDetails).sort((a,b)=>b.net-a.net), orderTypeWise, orderTypeDetails: Object.values(orderTypeDetails), discountWise: { count: discountRows.length, amount: money(discounts), rows: discountRows }, refunds, voidOrders: (db.orders || []).filter(o => o.status === 'VOID' && (selectedShift ? paidOrderBelongsToShift(o, selectedShift) : between(o.voidedAt || o.createdAt, from, to))).map(o => ({ ...o, total: totals(o).total })), orders };
+}
+
+
+/* ============================================================
+   SwiftTill V48 Tender-wise Close Day + clearer cash drawer rules
+   Cash drawer = physical cash only. Card/Online are recorded as tenders.
+============================================================ */
+function v48TenderName(method) {
+  const raw = String(method || 'Unknown').trim() || 'Unknown';
+  const m = raw.toLowerCase();
+  if (m.includes('cash')) return 'Cash';
+  if (m.includes('card') || m.includes('visa') || m.includes('master')) return 'Card';
+  if (m.includes('online') || m.includes('jazz') || m.includes('easy') || m.includes('easypaisa') || m.includes('bank') || m.includes('transfer') || m.includes('raast') || m.includes('qr') || m.includes('wallet')) return 'Online';
+  return raw;
+}
+function v48EmptyTender(method) { return { method, count: 0, sales: 0, received: 0, change: 0, refunds: 0, net: 0 }; }
+function v48BuildTenderSummary(paymentDetails = [], refunds = []) {
+  const map = { Cash: v48EmptyTender('Cash'), Card: v48EmptyTender('Card'), Online: v48EmptyTender('Online'), Other: v48EmptyTender('Other') };
+  for (const p of paymentDetails || []) {
+    const name = v48TenderName(p.method);
+    const bucket = map[name] ? name : 'Other';
+    map[bucket].count += Number(p.count || 0);
+    map[bucket].sales = money(map[bucket].sales + Number(p.revenue || p.amount || 0));
+    map[bucket].received = money(map[bucket].received + Number(p.received ?? p.revenue ?? 0));
+    map[bucket].change = money(map[bucket].change + Number(p.change || 0));
+  }
+  for (const r of refunds || []) {
+    const name = v48TenderName(r.method || 'Cash');
+    const bucket = map[name] ? name : 'Other';
+    map[bucket].refunds = money(map[bucket].refunds + Number(r.amount || 0));
+  }
+  for (const k of Object.keys(map)) map[k].net = money(map[k].sales - map[k].refunds);
+  return {
+    cash: map.Cash,
+    card: map.Card,
+    online: map.Online,
+    other: map.Other,
+    all: {
+      method: 'All',
+      count: Object.values(map).reduce((s,x)=>s+Number(x.count||0),0),
+      sales: money(Object.values(map).reduce((s,x)=>s+Number(x.sales||0),0)),
+      received: money(Object.values(map).reduce((s,x)=>s+Number(x.received||0),0)),
+      change: money(Object.values(map).reduce((s,x)=>s+Number(x.change||0),0)),
+      refunds: money(Object.values(map).reduce((s,x)=>s+Number(x.refunds||0),0)),
+      net: money(Object.values(map).reduce((s,x)=>s+Number(x.net||0),0))
+    }
+  };
+}
+function reportData(db, filters = {}) {
+  const from = filters.from || '';
+  const to = filters.to || '';
+  const wantPayment = String(filters.paymentMode || '').toLowerCase();
+  const wantItem = filters.itemId || '';
+  const wantCategory = filters.categoryId || '';
+  const wantOrderType = filters.orderType || '';
+  const wantCashier = filters.cashierId || '';
+  const wantTaker = filters.orderTakerId || '';
+  const wantShift = filters.shiftId || '';
+  const selectedShift = wantShift ? (db.shifts || []).find(s => s.id === wantShift) : null;
+  const discountOnly = filters.discountOnly === '1' || filters.discountOnly === true;
+  const refundOnly = filters.refundOnly === '1' || filters.refundOnly === true;
+  let paid = (db.orders || []).filter(o => o.status === 'PAID');
+  paid = selectedShift ? paid.filter(o => paidOrderBelongsToShift(o, selectedShift)) : paid.filter(o => between(o.paidAt || o.createdAt, from, to));
+  paid = paid.filter(o => {
+    if (wantPayment && !(o.payments || []).some(p => String(p.method || '').toLowerCase() === wantPayment || v48TenderName(p.method).toLowerCase() === wantPayment)) return false;
+    if (wantItem && !(o.lines || []).some(l => l.itemId === wantItem || l.dealId === wantItem)) return false;
+    if (wantCategory && !(o.lines || []).some(l => l.categoryId === wantCategory)) return false;
+    if (wantOrderType && o.type !== wantOrderType) return false;
+    if (wantCashier && o.cashierId !== wantCashier) return false;
+    if (wantTaker && o.orderTakerId !== wantTaker) return false;
+    if (discountOnly && totals(o).discount <= 0) return false;
+    return true;
+  });
+  let refunds = (db.refunds || []).filter(r => {
+    if (selectedShift) {
+      const o = (db.orders || []).find(x => x.id === r.orderId);
+      return paidOrderBelongsToShift(o, selectedShift) || between(r.createdAt, selectedShift.openedAt?.slice(0,10), (selectedShift.closedAt || now()).slice(0,10));
+    }
+    return between(r.createdAt, from, to);
+  });
+  if (refundOnly) {
+    const refundOrderIds = new Set(refunds.map(r => r.orderId));
+    paid = paid.filter(o => refundOrderIds.has(o.id));
+  }
+  const gross = paid.reduce((s,o) => s + totals(o).subtotal + totals(o).deliveryFee, 0);
+  const discounts = paid.reduce((s,o) => s + totals(o).discount, 0);
+  const refundAmount = refunds.reduce((s,r) => s + Number(r.amount || 0), 0);
+  const net = paid.reduce((s,o) => s + totals(o).total, 0) - refundAmount;
+  const paymentWise = {}, paymentDetails = {}, itemWise = {}, categoryWise = {}, categoryDetails = {}, orderTypeWise = {}, orderTypeDetails = {}, discountRows = [];
+  let guests = 0, changeReturned = 0, totalReceived = 0;
+  for (const o of paid) {
+    const ot = totals(o);
+    guests += Number(o.guests || 0);
+    orderTypeWise[o.type] = money((orderTypeWise[o.type] || 0) + ot.total);
+    orderTypeDetails[o.type] ||= { type: o.type, orders: 0, guests: 0, gross: 0, discount: 0, net: 0 };
+    orderTypeDetails[o.type].orders += 1;
+    orderTypeDetails[o.type].guests += Number(o.guests || 0);
+    orderTypeDetails[o.type].gross = money(orderTypeDetails[o.type].gross + ot.subtotal + ot.deliveryFee);
+    orderTypeDetails[o.type].discount = money(orderTypeDetails[o.type].discount + ot.discount);
+    orderTypeDetails[o.type].net = money(orderTypeDetails[o.type].net + ot.total);
+    if (ot.discount > 0) discountRows.push({ number: o.number, date: o.paidAt, type: o.type, cashier: o.cashierName || '', discountType: o.discountType || '', discountValue: o.discountValue || 0, discount: ot.discount, total: ot.total });
+    for (const p of (o.payments || [])) {
+      const method = v48TenderName(p.method || 'Unknown');
+      paymentWise[method] = money((paymentWise[method] || 0) + Number(p.amount || 0));
+      paymentDetails[method] ||= { method, count: 0, received: 0, change: 0, revenue: 0 };
+      paymentDetails[method].count += 1;
+      paymentDetails[method].received = money(paymentDetails[method].received + Number(p.received ?? p.amount ?? 0));
+      paymentDetails[method].change = money(paymentDetails[method].change + Number(p.change || 0));
+      paymentDetails[method].revenue = money(paymentDetails[method].revenue + Number(p.amount || 0));
+      totalReceived = money(totalReceived + Number(p.received ?? p.amount ?? 0));
+      changeReturned = money(changeReturned + Number(p.change || 0));
+    }
+    for (const l of (o.lines || [])) {
+      const mods = (l.modifiers || []).reduce((a,m) => a + Number(m.price || 0), 0);
+      const qty = Number(l.qty) || 0;
+      const grossLine = money(((Number(l.price) || 0) + mods) * qty);
+      const cat = l.categoryName || (db.categories || []).find(c => c.id === l.categoryId)?.name || (l.kind === 'DEAL' ? 'Deals' : 'Uncategorized');
+      itemWise[l.name] ||= { item: l.name, category: cat, qty: 0, gross: 0, discountShare: 0, net: 0 };
+      itemWise[l.name].qty += qty;
+      itemWise[l.name].gross = money(itemWise[l.name].gross + grossLine);
+      categoryWise[cat] = money((categoryWise[cat] || 0) + grossLine);
+      categoryDetails[cat] ||= { category: cat, qty: 0, gross: 0, net: 0 };
+      categoryDetails[cat].qty += qty;
+      categoryDetails[cat].gross = money(categoryDetails[cat].gross + grossLine);
+    }
+  }
+  for (const row of Object.values(itemWise)) { row.discountShare = paid.length ? money(discounts * (row.gross / Math.max(1, gross))) : 0; row.net = money(row.gross - row.discountShare); }
+  for (const row of Object.values(categoryDetails)) row.net = money(row.gross - (paid.length ? discounts * (row.gross / Math.max(1, gross)) : 0));
+  const paymentDetailRows = Object.values(paymentDetails).sort((a,b)=>String(a.method).localeCompare(String(b.method)));
+  const tenderSummary = v48BuildTenderSummary(paymentDetailRows, refunds);
+  const shiftForSummary = selectedShift || activeShift(db) || null;
+  const openingCashForSummary = shiftForSummary ? Number(shiftForSummary.openingCash || 0) : 0;
+  const cashSalesForSummary = tenderSummary.cash.sales;
+  const cashRefunds = tenderSummary.cash.refunds;
+  const expectedCashForSummary = money(openingCashForSummary + cashSalesForSummary - cashRefunds);
+  const orders = paid.map(o => ({ number: o.number, date: o.paidAt, businessDate: o.businessDate || '', businessDayId: o.businessDayId || o.shiftId || '', type: o.type, table: (db.tables || []).find(t => t.id === o.tableId)?.name || '', customer: o.customerName || '', mobile: o.mobile || '', cashier: o.cashierName || '', orderTaker: o.orderTakerName || '', guests: o.guests || 0, subtotal: totals(o).subtotal, discount: totals(o).discount, deliveryFee: totals(o).deliveryFee, total: totals(o).total, payments: (o.payments || []).map(p => `${v48TenderName(p.method)}:${p.amount}${p.change?` change:${p.change}`:''}`).join(', ') }));
+  return {
+    range: { from, to }, filters,
+    businessDay: shiftForSummary ? { id: shiftForSummary.id, number: shiftForSummary.number, businessDate: shiftForSummary.businessDate || '', openedAt: shiftForSummary.openedAt || '', closedAt: shiftForSummary.closedAt || '', status: shiftForSummary.status || '' } : null,
+    shiftSummary: {
+      shiftId: shiftForSummary?.id || '', shiftNumber: shiftForSummary?.number || '', shiftStatus: shiftForSummary?.status || '', businessDate: shiftForSummary?.businessDate || '',
+      openingCash: money(openingCashForSummary), cashSales: money(cashSalesForSummary), cashRefunds: money(cashRefunds), expectedCash: expectedCashForSummary,
+      countedCash: shiftForSummary?.countedCash ?? null, difference: shiftForSummary?.difference ?? null,
+      cardSales: tenderSummary.card.sales, cardRefunds: tenderSummary.card.refunds, cardNet: tenderSummary.card.net,
+      onlineSales: tenderSummary.online.sales, onlineRefunds: tenderSummary.online.refunds, onlineNet: tenderSummary.online.net,
+      otherSales: tenderSummary.other.sales, otherRefunds: tenderSummary.other.refunds, otherNet: tenderSummary.other.net,
+      nonCashSales: money(tenderSummary.card.sales + tenderSummary.online.sales + tenderSummary.other.sales),
+      nonCashNet: money(tenderSummary.card.net + tenderSummary.online.net + tenderSummary.other.net),
+      totalTenderSales: tenderSummary.all.sales, totalTenderNet: tenderSummary.all.net,
+      cashDrawerNote: 'Opening/expected/counted cash are physical cash drawer only. Card and online sales are separate tender totals.',
+      openedAt: shiftForSummary?.openedAt || '', closedAt: shiftForSummary?.closedAt || ''
+    },
+    tenderSummary,
+    summary: { orders: paid.length, guests, gross: money(gross), discounts: money(discounts), refunds: money(refundAmount), net: money(net), averageBill: paid.length ? money(net / paid.length) : 0, averageGuest: guests ? money(net / guests) : 0, totalReceived: money(totalReceived), changeReturned },
+    paymentWise, paymentDetails: paymentDetailRows,
+    itemWise: Object.values(itemWise).sort((a,b) => b.net - a.net), categoryWise, categoryDetails: Object.values(categoryDetails).sort((a,b)=>b.net-a.net), orderTypeWise, orderTypeDetails: Object.values(orderTypeDetails),
+    discountWise: { count: discountRows.length, amount: money(discounts), rows: discountRows }, refunds,
+    voidOrders: (db.orders || []).filter(o => o.status === 'VOID' && (selectedShift ? paidOrderBelongsToShift(o, selectedShift) : between(o.voidedAt || o.createdAt, from, to))).map(o => ({ ...o, total: totals(o).total })),
+    orders
+  };
 }

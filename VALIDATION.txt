@@ -1,21 +1,17 @@
-SwiftTill POS V47 Validation
+SwiftTill POS V48 Validation
+============================
+Version: 48.0.0-tender-close-day-reports
 
-Build: 47.0.0-auto-logout-inactivity-security
-Mode: Online-only. Offline concept remains removed.
-
-Checks completed:
+Checks performed:
 - API syntax: PASS (node --check apps/api/server.js)
-- Auth package syntax: PASS
-- DB adapter/client syntax: PASS
-- R2/storage syntax: PASS
-- Print agent syntax: PASS
-- Web app JavaScript syntax: PASS
-- Auth smoke test: PASS
+- Web app JavaScript parse: PASS (new Function app.js)
+- Print agent syntax: PASS (node --check apps/print-agent/agent.js)
+- Offline modules: still removed / online-only
+- Day Close cash wording: physical cash only
+- Tender summary: Cash / Card / Online recorded separately
+- Cash drawer formula: Opening Cash Float + Cash Sales - Cash Refunds
+- Cash difference formula: Physical Cash Count - Expected Drawer Cash
 
-Feature flags expected:
-- autoLogoutInactivityV47 = true
-- inactivityTimeoutMinutes = 12
-- inactivityWarningBeforeLogout = true
-- idleLogoutClearsToken = true
-- idleLogoutAudited = true
-- unsavedCartProtectedBeforeIdleLogout = true
+Notes:
+- Opening Cash Float is optional physical drawer float. Use 0 if restaurant does not keep starting cash in drawer.
+- Counted Cash must not include Card/Online/Bank/Wallet amounts.

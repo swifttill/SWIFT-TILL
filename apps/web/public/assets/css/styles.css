@@ -900,3 +900,11 @@ body{
 
 /* SwiftTill V47 auto logout inactivity security */
 .idle-logout-warning{position:fixed;inset:0;z-index:99999;display:none;align-items:center;justify-content:center;background:rgba(6,17,38,.62);backdrop-filter:blur(10px);padding:20px}.idle-logout-warning.show{display:flex}.idle-card{width:min(440px,100%);border-radius:24px;background:#fff;padding:26px;border:1px solid #d8e5f7;box-shadow:0 30px 90px rgba(6,17,38,.28);text-align:center;color:var(--ink)}.idle-icon{width:62px;height:62px;margin:0 auto 12px;border-radius:20px;display:grid;place-items:center;background:#fff7ed;border:1px solid #fed7aa;font-size:30px}.idle-card h2{margin:0;color:var(--navy);font-size:22px;letter-spacing:-.03em}.idle-card p{margin:10px 0 16px;color:var(--muted);font-weight:750;line-height:1.5}.idle-count{display:flex;align-items:baseline;justify-content:center;gap:8px;background:#f8fbff;border:1px solid #dbeafe;border-radius:18px;padding:14px;margin:0 0 18px}.idle-count b{font-size:38px;line-height:1;color:#dc2626}.idle-count span{font-weight:900;color:#233a67}.idle-actions{display:grid;grid-template-columns:1fr 1fr;gap:10px}.idle-login-note{background:#fff7ed;border:1px solid #fed7aa;color:#9a3412;border-radius:14px;padding:10px 12px;margin:0 0 14px;font-weight:900;text-align:center;line-height:1.35}@media(max-width:560px){.idle-card{padding:22px;border-radius:20px}.idle-actions{grid-template-columns:1fr}.idle-count b{font-size:32px}}
+
+
+/* V48 Tender close day report clarity */
+.v48-summary,.v48-cash-row{gap:12px;align-items:start}
+.v48-cash-note{margin:10px 0 12px;padding:10px 12px;border:1px solid var(--line);border-radius:14px;background:rgba(15,23,42,.04);font-size:12px;color:var(--muted);line-height:1.4}
+.v48-summary table,.v48-cash-row table{font-size:12px}
+.field small{display:block;margin-top:5px;color:var(--muted);font-size:11px;line-height:1.35}
+@media print{.v48-cash-note{break-inside:avoid;font-size:10px;padding:6px 8px}.v48-summary,.v48-cash-row{gap:6px}.v48-summary table,.v48-cash-row table{font-size:10px}}
