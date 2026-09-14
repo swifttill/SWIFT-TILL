@@ -1,18 +1,23 @@
-# SwiftTill POS V44 — Offline Auth Operational Safety
+# SwiftTill POS V45 — Offline Rollback / Stable Online Printer Build
 
-V44 adds offline authentication after first online login, cached permission snapshots, Sync Center recovery tools, and a larger operational safety matrix.
+This package rolls the app back to the stable pre-offline architecture. V41/V42/V43/V44 offline-first modules, offline authentication cache, local offline queues, counter-agent disk sync, manual offline sync center, and offline billing mode are removed from the active build.
 
-# SwiftTill POS V43 — Complete Offline Safe Counter
+## V45 rollback scope
 
-V43 completes the offline-first single-counter workflow for unreliable internet clients. Cash/Card/Online are normal POS payment selections, not real gateway integrations. Offline reports, sync progress, manual sync, browser queue, IndexedDB mirror and Counter Agent disk backups are included. The client agent is Defender-friendly: no EXE, no obfuscation, no registry/service/startup install, no PowerShell bypass, and localhost-only bind.
+- Restored online-only POS operation.
+- Preserved V39 discount/payment/button guards.
+- Preserved V40 printer module hardening and client print-agent package.
+- Preserved Neon cloud-state persistence, R2 media handling, reports, admin, cross-device live sync, and paid-order/table/payment guards.
+- Offline use is intentionally blocked to avoid hidden local data, duplicate bills, sync conflicts, or reports mismatch.
 
-# SwiftTill POS — V42 Complete Offline Card/Online Payments + Offline Reports
+## Expected status flags
 
-V42 added payment capture for Cash, Card and Online in online/offline mode. V43 keeps Card/Online as POS selections with optional reference, blocks non-cash overpayment, and offline entries sync later as pending reconciliation. Offline reports now include cached cloud sales plus unsynced local bills with visible warning and CSV export support.
+- `version = 45.0.0-rollback-online-printer-stable`
+- `offlineModeRemovedRollbackV45 = true`
+- `onlineOnlyModeRestored = true`
+- `noLocalOfflineBilling = true`
 
-# SwiftTill POS V41 — Single Counter Offline Sync
-
-Earlier phase: registered counter PC offline billing, local WAL/backup copy, upload progress, auto-sync, Manual Sync Center, and Counter Agent offline backup endpoint. V43 upgrades this with Card/Online selection support, IndexedDB mirror and safer client agent packaging.
+---
 
 # SwiftTill POS V39 — Discount, Cash and Button Visibility Guards
 

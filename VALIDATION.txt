@@ -1,21 +1,17 @@
-SwiftTill V44 Offline Authentication + Operational Safety
+SwiftTill POS V45 Rollback Online Printer Stable
 
-Validation completed:
-- API syntax PASS
-- Web JavaScript syntax PASS
-- Auth smoke test PASS
-- Storage/R2 syntax PASS
-- Counter Agent syntax PASS
-- Client Counter Agent syntax PASS
-- Service Worker cache updated to V44
-- Offline authentication cache code added
-- Sync Center operational scenario and recovery tools added
+Source base: V40 printer module stable package
+Offline V41-V44 modules: REMOVED / not included
+Online-only mode: ACTIVE
+V39 discount/payment guards: PRESERVED
+V40 printer module: PRESERVED
+Client print-agent package: INCLUDED
+
+Validation performed:
+- API syntax check PASS
+- Web app JavaScript syntax PASS
+- Auth package syntax PASS
+- DB adapter/client syntax PASS
+- R2/storage syntax PASS
+- Print agent syntax PASS
 - ZIP integrity PASS
-
-Version expected:
-44.0.0-offline-auth-operational-safety
-
-Notes:
-- First offline use requires one successful online login on the registered counter PC.
-- Plain passwords are not stored; local unlock uses salted PBKDF2 hash.
-- Mobile/second devices remain online-only when internet is down.
