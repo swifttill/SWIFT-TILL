@@ -1,3 +1,11 @@
+# SwiftTill V50 - Print Page Center + Paper Waste Fix
+
+- Browser print now isolates only `#printArea` so hidden app screens cannot create extra blank pages.
+- A4/PDF reports are centered on the page and constrained to one compact report block where content allows.
+- Thermal reports and receipts are centered and use bill/report content height instead of forcing unnecessary blank paper.
+- Receipt/report browser fallback uses print-mode classes and cleanup after printing.
+- Offline concept remains removed; online-only stable flow continues.
+
 # SwiftTill POS — V49 Professional Business Day Language
 
 V49 cleans client-facing Business Day/Open Day/Close Day copy, removes Roman Urdu from production UI, and keeps V48 tender close-day reporting rules. Offline concept remains removed.

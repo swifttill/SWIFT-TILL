@@ -1,10 +1,19 @@
-SwiftTill POS Validation
-Version: 49.0.0-professional-business-day-language
+SwiftTill POS V50 - Print Page Center + Paper Waste Fix
 
-Checks performed:
-- API JavaScript syntax: PASS
+Validation:
+- API server syntax: PASS
+- DB client/adapter syntax: PASS
+- Auth package syntax: PASS
+- Storage/R2 package syntax: PASS
+- Print agent syntax: PASS
 - Web app JavaScript syntax: PASS
-- Package JSON: PASS
-- Professional Business Day wording: PASS
-- Offline modules remain removed: PASS
-- ZIP integrity: PASS
+- Auth smoke test: PASS
+- Uploaded sample PDF inspection: 3 pages detected; page 1 contained report content; pages 2-3 were blank.
+
+V50 print fix:
+- Browser print uses only #printArea during print.
+- Hidden POS/admin layout is display:none during print, preventing blank trailing pages.
+- A4/PDF report block is centered.
+- Thermal receipt/report block is centered.
+- Thermal report content is compact and does not print unnecessary empty detail sections.
+- Offline concept remains removed.

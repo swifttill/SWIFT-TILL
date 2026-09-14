@@ -1,8 +1,8 @@
 {
   "name": "swifttill-pos-monorepo",
-  "version": "49.0.0",
+  "version": "50.0.0",
   "private": true,
-  "description": "SwiftTill POS - V48 tender-wise day close reports and cash drawer clarity",
+  "description": "SwiftTill POS - V50 print page center and paper waste fix",
   "workspaces": [
     "apps/api",
     "apps/web",

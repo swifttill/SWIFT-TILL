@@ -908,3 +908,38 @@ body{
 .v48-summary table,.v48-cash-row table{font-size:12px}
 .field small{display:block;margin-top:5px;color:var(--muted);font-size:11px;line-height:1.35}
 @media print{.v48-cash-note{break-inside:avoid;font-size:10px;padding:6px 8px}.v48-summary,.v48-cash-row{gap:6px}.v48-summary table,.v48-cash-row table{font-size:10px}}
+
+/* ============================================================
+   SwiftTill V50 - Centered print + blank page elimination
+   The uploaded sample produced two empty pages because hidden app layout
+   still occupied print space. During print we now display only #printArea.
+   ============================================================ */
+@media print{
+  @page{size:auto;margin:0!important}
+  html,body{margin:0!important;padding:0!important;width:100%!important;height:auto!important;min-height:0!important;background:#fff!important;overflow:visible!important}
+  body>*:not(#printArea){display:none!important}
+  #app,#modalRoot,#toast,#globalBusy,.idle-logout-warning{display:none!important}
+  #printArea{display:block!important;visibility:visible!important;position:static!important;inset:auto!important;width:100%!important;max-width:none!important;min-height:0!important;height:auto!important;margin:0!important;padding:0!important;background:#fff!important;color:#000!important;overflow:visible!important;box-shadow:none!important;border:0!important;break-after:auto!important;page-break-after:auto!important;break-before:auto!important;page-break-before:auto!important}
+  #printArea *{visibility:visible!important;box-sizing:border-box!important;break-after:auto;page-break-after:auto}
+  #printArea .v50-print-inner{display:block!important;width:100%!important;max-width:100%!important;margin:0 auto!important;padding:0!important;background:#fff!important;min-height:0!important;height:auto!important;overflow:visible!important;break-after:auto!important;page-break-after:auto!important}
+  #printArea.print-a4 .v50-print-inner{width:210mm!important;max-width:210mm!important;margin-left:auto!important;margin-right:auto!important;padding:8mm 10mm!important}
+  #printArea.print-a4 .report-a4,#printArea.print-a4 .qb-a4,#printArea.print-a4 .v50-a4{width:190mm!important;max-width:190mm!important;margin:0 auto!important;padding:0!important;border:0!important;box-shadow:none!important;border-radius:0!important;background:#fff!important;color:#000!important;break-after:auto!important;page-break-after:auto!important}
+  #printArea.print-a4 .qb-head{margin-bottom:5px!important;padding-bottom:4px!important}
+  #printArea.print-a4 .qb-title-row{margin:5px 0!important}
+  #printArea.print-a4 .qb-two-col{gap:5px!important;margin-bottom:4px!important}
+  #printArea.print-a4 .qb-section-title{margin:5px 0 3px!important}
+  #printArea.print-a4 .qb-table-wrap{margin:3px 0 4px!important;overflow:visible!important}
+  #printArea.print-a4 .qb-table{font-size:8px!important;line-height:1.12!important;table-layout:auto!important}
+  #printArea.print-a4 .qb-table th,#printArea.print-a4 .qb-table td{padding:2px 3px!important;line-height:1.12!important}
+  #printArea.print-a4 .qb-footer{margin:4px 0 0!important;font-size:8px!important}
+  #printArea.print-thermal .v50-print-inner{width:80mm!important;max-width:80mm!important;margin-left:auto!important;margin-right:auto!important;padding:1mm 0!important;min-height:0!important;height:auto!important}
+  #printArea.print-thermal .thermal-report,#printArea.print-thermal .receipt{width:76mm!important;max-width:76mm!important;margin:0 auto!important;padding:1mm 0!important;border:0!important;box-shadow:none!important;background:#fff!important;color:#000!important;font-family:"Consolas","Courier New",monospace!important;font-size:9.5px!important;line-height:1.1!important;min-height:0!important;height:auto!important;break-after:auto!important;page-break-after:auto!important}
+  #printArea.print-thermal .receipt.narrow{width:54mm!important;max-width:54mm!important;margin:0 auto!important}
+  #printArea.print-thermal .receipt-logo,#printArea.print-thermal .thermal-logo{max-height:28px!important;margin:0 auto 2px!important}
+  #printArea.print-thermal .sep,#printArea.print-thermal .tr-sep{margin:2px 0!important}
+  #printArea.print-thermal .receipt h3{font-size:12px!important;margin:0 0 2px!important;line-height:1.08!important}
+  #printArea.print-thermal .r,#printArea.print-thermal .tr-line{line-height:1.1!important;margin:1px 0!important;gap:4px!important}
+  #printArea.print-thermal .tr-title{font-size:9px!important;margin:1px 0!important;line-height:1.1!important}
+  #printArea.print-thermal .tr-grid3{line-height:1.08!important;margin:1px 0!important;gap:4px!important}
+  #printArea.print-thermal .small{font-size:8.5px!important;line-height:1.08!important}
+}

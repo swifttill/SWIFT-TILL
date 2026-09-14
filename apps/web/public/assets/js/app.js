@@ -2091,3 +2091,92 @@ openOpenShift = function(){
   <button class="primary-btn" style="width:100%" id="doOpenShift">Open Business Day & Start Billing</button>`);
   $('#doOpenShift').onclick=async()=>{try{await api('/api/day/open',{businessDate:$('#businessDate').value,openingCash:Number($('#openingCash').value||0),note:$('#dayNote').value||''});closeModal();await loadState();renderShell();toast('Business day opened. Billing is now available.');}catch(e){toast(e.message,true);}};
 };
+
+/* ============================================================
+   SwiftTill V50 Print Page Center + Paper Waste Fix
+   - browser print isolates #printArea only
+   - A4/PDF and thermal output are centered
+   - blank trailing pages are prevented
+============================================================ */
+function v50ReportHasContentRows(rows){ return Array.isArray(rows) && rows.length > 0; }
+function v50PaymentRows(r){ try { return reportPaymentRows(r).filter(x => Number(x[1] || 0) || Number(String(x[4] || '').replace(/[^0-9.-]/g,'')) ); } catch { return []; } }
+function v50ThermalSection(title, rows, cols=3){
+  if(!v50ReportHasContentRows(rows)) return '';
+  return `<div class="tr-sep"></div>${thermalTableBlock(title, rows, cols)}`;
+}
+function v50PreparePrintArea(html, mode='thermal'){
+  const area = ensurePrintArea();
+  const thermal = mode === 'thermal' || mode === 'receipt' || mode === 'bill';
+  const receipt = mode === 'receipt' || mode === 'bill';
+  area.className = `print-only v50-print-root ${thermal ? 'print-thermal v46-print-thermal v50-print-thermal' : 'print-a4 v46-print-a4 v50-print-a4'} ${receipt ? 'print-receipt v50-print-receipt' : 'print-report v50-print-report'}`;
+  area.innerHTML = `<div class="v50-print-inner">${html}</div>`;
+  document.body.classList.remove('v50-print-mode-a4','v50-print-mode-thermal');
+  document.body.classList.add('v50-printing', thermal ? 'v50-print-mode-thermal' : 'v50-print-mode-a4');
+  const cleanup = () => {
+    document.body.classList.remove('v50-printing','v50-print-mode-a4','v50-print-mode-thermal');
+    window.removeEventListener('afterprint', cleanup);
+  };
+  window.addEventListener('afterprint', cleanup);
+  return area;
+}
+function v50BrowserPrint(html, mode='thermal'){
+  v50PreparePrintArea(html, mode);
+  setTimeout(()=>window.print(),120);
+}
+const __v50BasePrintReceipt = printReceipt;
+printReceipt = async function(r){
+  if(!r || !(r.lines||[]).length) return toast('Nothing to print', true);
+  const html = receiptHTML(r);
+  if(state?.printAgent?.cloudQueueConfigured){
+    try{
+      const queued = await api('/api/print-jobs',{type:r.unpaid?'unpaid-bill':'receipt',receipt:r,html,text:receiptText(r)});
+      if(queued?.queued){ toast('Sent to cloud print queue'); return; }
+    }catch(e){ toast('Cloud print queue failed; trying local/browser print', true); }
+  }
+  const agentUrl=(state?.settings?.localAgentUrl||'').trim();
+  if(agentUrl){
+    try{
+      const res=await fetch(agentUrl,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({type:r.unpaid?'unpaid-bill':'receipt',receipt:r,html,text:receiptText(r)})});
+      if(res.ok){ toast('Sent direct to local thermal printer agent'); return; }
+    }catch(e){}
+  }
+  v50BrowserPrint(html, r.unpaid ? 'bill' : 'receipt');
+};
+buildThermalReportHtml = function(r){
+  const s=r.summary||{}, sh=r.shiftSummary||{}, t=r.tenderSummary||{}; const title=currentReportTitle();
+  let body=`<div class="thermal-report v46-thermal v48-thermal v50-thermal"><div class="tr-center"><b>${esc(reportStoreName())}</b>${state?.settings?.branchName?`<br>${esc(state.settings.branchName)}`:''}</div><div class="tr-sep"></div>${thermalLine('REPORT',title)}${thermalLine('DAY',sh.businessDate||'')}${sh.openedAt?thermalLine('OPEN',new Date(sh.openedAt).toLocaleString()):''}${thermalLine('CLOSE',sh.closedAt?new Date(sh.closedAt).toLocaleString():'Open')}<div class="tr-sep"></div><div class="tr-title">SUMMARY</div>${thermalLine('Gross',reportMoney(s.gross))}${thermalLine('Discount',reportMoney(s.discounts))}${thermalLine('Refund',reportMoney(s.refunds))}${thermalLine('NET',reportMoney(s.net))}${thermalLine('Orders',s.orders||0)}`;
+  if(['daily','payment','x','z','custom'].includes(reportType)){
+    body+=`<div class="tr-sep"></div><div class="tr-title">TENDER SUMMARY</div>${thermalLine('Cash Sales',reportMoney(t.cash?.sales||sh.cashSales))}${thermalLine('Card Sales',reportMoney(t.card?.sales||sh.cardSales))}${thermalLine('Online Sales',reportMoney(t.online?.sales||sh.onlineSales))}${thermalLine('Tender Net',reportMoney(t.all?.net||s.net))}`;
+    body+=`<div class="tr-sep"></div><div class="tr-title">CASH DRAWER</div>${thermalLine('Opening Float',reportMoney(sh.openingCash))}${thermalLine('Expected Cash',reportMoney(sh.expectedCash))}${thermalLine('Physical Count',sh.countedCash==null?'Not closed':reportMoney(sh.countedCash))}${thermalLine('Cash Diff.',sh.difference==null?'Not closed':reportMoney(sh.difference))}`;
+  }
+  if(reportType==='itemwise') body+=v50ThermalSection('ITEM SALES',(r.itemWise||[]).slice(0,25).map(i=>[i.item,`x${i.qty}`,reportMoney(i.net)]),3);
+  else if(reportType==='category') body+=v50ThermalSection('CATEGORY',(r.categoryDetails||[]).slice(0,20).map(c=>[c.category,`x${c.qty}`,reportMoney(c.net)]),3);
+  else if(reportType==='ordertype') body+=v50ThermalSection('ORDER TYPE',(r.orderTypeDetails||[]).map(o=>[formatType(o.type),`${o.orders} bills`,reportMoney(o.net)]),3);
+  else if(reportType==='discount') body+=v50ThermalSection('DISCOUNT',(r.discountWise?.rows||[]).slice(0,25).map(o=>[`#${o.number}`,formatType(o.type),reportMoney(o.discount)]),3);
+  else if(reportType==='voidrefund') body+=v50ThermalSection('VOID/REFUND',reportRefundRows(r).slice(0,25).map(x=>[`${x[0]} #${x[1]}`,x[5],x[4]]),3);
+  else {
+    const payments = v50PaymentRows(r).map(p=>[p[0],`${p[1]} trx`,p[4]]);
+    body+=v50ThermalSection('PAYMENTS', payments, 3);
+  }
+  body+=`<div class="tr-sep"></div><div class="tr-center small">${esc(state?.settings?.reportFooter || 'Generated by SwiftTill POS')}</div></div>`;
+  return body;
+};
+const __v50BaseBuildA4ReportHtml = buildA4ReportHtml;
+buildA4ReportHtml = function(r){
+  const html = __v50BaseBuildA4ReportHtml(r);
+  return String(html).replace('class="report-a4 qb-a4', 'class="report-a4 qb-a4 v50-a4');
+};
+printReportHtml = async function(mode='thermal'){
+  const r=window.swiftLastReport;
+  if(!r) return toast('Run report first.', true);
+  const thermal=mode==='thermal';
+  const html=thermal?buildThermalReportHtml(r):buildA4ReportHtml(r);
+  if(thermal && state?.printAgent?.cloudQueueConfigured){
+    try{
+      const queued=await api('/api/print-jobs',{type:'report',html,text:thermalReportText(r)});
+      if(queued?.queued){ toast('Thermal report sent to cloud print queue'); return; }
+    }catch(e){ toast('Cloud report queue failed; browser print opened', true); }
+  }
+  v50BrowserPrint(html, thermal ? 'thermal' : 'a4');
+};
+printReportArea = function(){ return printReportHtml('a4'); };
