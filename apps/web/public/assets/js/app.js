@@ -1808,4 +1808,162 @@ async function printReportHtml(mode='thermal'){
 }
 
 
+
+/* ============================================================
+   SwiftTill V47 Auto Logout Inactivity Security
+   - auto logout after 12 minutes idle
+   - warning before logout
+   - saves dirty cart before session lock where possible
+   - clears local token and audits logout on server
+============================================================ */
+const SWIFTTILL_IDLE_TIMEOUT_MS = 12 * 60 * 1000;
+const SWIFTTILL_IDLE_WARNING_MS = 60 * 1000;
+let __idleLogoutTimer = null;
+let __idleCountdownTimer = null;
+let __idleWarningVisible = false;
+let __lastIdleActivityWrite = 0;
+const SWIFTTILL_ACTIVITY_KEY = 'swifttill_last_activity_at';
+const SWIFTTILL_IDLE_EVENT_KEY = 'swifttill_idle_logout_event';
+
+function swiftNow(){ return Date.now(); }
+function setSharedActivityNow(){
+  const n = swiftNow();
+  if(n - __lastIdleActivityWrite > 1000){
+    __lastIdleActivityWrite = n;
+    try{ localStorage.setItem(SWIFTTILL_ACTIVITY_KEY, String(n)); }catch{}
+  }
+  return n;
+}
+function getSharedActivityAt(){
+  const n = Number(localStorage.getItem(SWIFTTILL_ACTIVITY_KEY) || 0);
+  return n || setSharedActivityNow();
+}
+function ensureIdleLogoutWarning(){
+  let el = document.getElementById('idleLogoutWarning');
+  if(el) return el;
+  el = document.createElement('div');
+  el.id = 'idleLogoutWarning';
+  el.className = 'idle-logout-warning';
+  el.innerHTML = `<div class="idle-card">
+    <div class="idle-icon">🔒</div>
+    <h2>Session will logout soon</h2>
+    <p>No activity detected. For counter security, SwiftTill will logout automatically.</p>
+    <div class="idle-count"><b id="idleCountdown">60</b><span>seconds left</span></div>
+    <div class="idle-actions"><button class="primary-btn" id="continueSessionBtn">Continue Session</button><button class="ghost-btn logout-action" id="idleLogoutNowBtn">Logout Now</button></div>
+  </div>`;
+  document.body.appendChild(el);
+  $('#continueSessionBtn', el).onclick = () => registerUserActivity('continue-session', true);
+  $('#idleLogoutNowBtn', el).onclick = () => idleLogoutNow('manual-from-warning');
+  return el;
+}
+function showIdleWarning(){
+  if(!token || !state) return;
+  __idleWarningVisible = true;
+  const el = ensureIdleLogoutWarning();
+  el.classList.add('show');
+  updateIdleCountdown();
+  clearInterval(__idleCountdownTimer);
+  __idleCountdownTimer = setInterval(updateIdleCountdown, 1000);
+}
+function hideIdleWarning(){
+  __idleWarningVisible = false;
+  clearInterval(__idleCountdownTimer);
+  __idleCountdownTimer = null;
+  const el = document.getElementById('idleLogoutWarning');
+  if(el) el.classList.remove('show');
+}
+function updateIdleCountdown(){
+  const left = Math.max(0, Math.ceil((SWIFTTILL_IDLE_TIMEOUT_MS - (swiftNow() - getSharedActivityAt())) / 1000));
+  const c = document.getElementById('idleCountdown');
+  if(c) c.textContent = String(left);
+  if(left <= 0) idleLogoutNow('inactivity');
+}
+function scheduleIdleCheck(){
+  clearTimeout(__idleLogoutTimer);
+  if(!token || !state) return;
+  const idleFor = swiftNow() - getSharedActivityAt();
+  if(idleFor >= SWIFTTILL_IDLE_TIMEOUT_MS) return idleLogoutNow('inactivity');
+  if(idleFor >= SWIFTTILL_IDLE_TIMEOUT_MS - SWIFTTILL_IDLE_WARNING_MS) showIdleWarning();
+  else hideIdleWarning();
+  const next = Math.max(1000, Math.min(30000, (SWIFTTILL_IDLE_TIMEOUT_MS - SWIFTTILL_IDLE_WARNING_MS) - idleFor));
+  __idleLogoutTimer = setTimeout(scheduleIdleCheck, next);
+}
+function registerUserActivity(reason='activity', force=false){
+  if(!token || !state) return;
+  if(__idleWarningVisible || force || swiftNow() - __lastIdleActivityWrite > 1000){
+    setSharedActivityNow();
+    hideIdleWarning();
+    scheduleIdleCheck();
+  }
+}
+const SWIFTTILL_ACTIVITY_EVENTS = ['pointerdown','keydown','wheel','touchstart','click','input','change'];
+function startAutoLogoutSecurity(){
+  if(!token || !state) return;
+  setSharedActivityNow();
+  SWIFTTILL_ACTIVITY_EVENTS.forEach(ev => document.removeEventListener(ev, registerUserActivity, true));
+  SWIFTTILL_ACTIVITY_EVENTS.forEach(ev => document.addEventListener(ev, registerUserActivity, true));
+  document.removeEventListener('visibilitychange', swiftIdleVisibilityCheck, true);
+  document.addEventListener('visibilitychange', swiftIdleVisibilityCheck, true);
+  window.removeEventListener('storage', swiftIdleStorageSync);
+  window.addEventListener('storage', swiftIdleStorageSync);
+  scheduleIdleCheck();
+}
+function stopAutoLogoutSecurity(){
+  clearTimeout(__idleLogoutTimer);
+  clearInterval(__idleCountdownTimer);
+  __idleLogoutTimer = null;
+  __idleCountdownTimer = null;
+  hideIdleWarning();
+  SWIFTTILL_ACTIVITY_EVENTS.forEach(ev => document.removeEventListener(ev, registerUserActivity, true));
+}
+function swiftIdleVisibilityCheck(){
+  if(!document.hidden) scheduleIdleCheck();
+}
+function swiftIdleStorageSync(e){
+  if(e.key === SWIFTTILL_ACTIVITY_KEY) scheduleIdleCheck();
+  if(e.key === SWIFTTILL_IDLE_EVENT_KEY && e.newValue){
+    localStorage.removeItem('swifttill_token');
+    token=''; state=null; currentOrder=null;
+    try{ stopLiveSync && stopLiveSync(); }catch{}
+    stopAutoLogoutSecurity();
+    renderLogin();
+  }
+}
+async function idleLogoutNow(reason='inactivity'){
+  if(!token) return;
+  const oldToken = token;
+  hideIdleWarning();
+  try{
+    clearTimeout(__cartSaveTimer);
+    if(typeof autoSaveCurrentOrder === 'function' && currentOrder?.id && hasOrderLines(currentOrder)) await autoSaveCurrentOrder();
+  }catch(e){ console.warn('Pre-logout cart save failed:', e.message); }
+  try{
+    await fetch('/api/session/logout', { method:'POST', headers:{'Content-Type':'application/json', Authorization:`Bearer ${oldToken}`}, body:JSON.stringify({reason: reason === 'inactivity' ? 'inactivity' : 'manual'}) });
+  }catch{}
+  try{ localStorage.setItem(SWIFTTILL_IDLE_EVENT_KEY, String(Date.now())); }catch{}
+  localStorage.removeItem('swifttill_token');
+  sessionStorage.setItem('swifttill_logout_reason', reason === 'inactivity' ? 'Session auto logged out after 12 minutes of inactivity.' : 'Logged out.');
+  token=''; state=null; currentOrder=null; mobileBillOpen=false;
+  try{ stopLiveSync && stopLiveSync(); }catch{}
+  stopAutoLogoutSecurity();
+  renderLogin();
+}
+logout = function(){ idleLogoutNow('manual'); };
+const __v47BaseBoot = boot;
+boot = async function(){
+  await __v47BaseBoot();
+  if(token && state) startAutoLogoutSecurity(); else stopAutoLogoutSecurity();
+};
+const __v47BaseRenderLogin = renderLogin;
+renderLogin = function(){
+  stopAutoLogoutSecurity();
+  __v47BaseRenderLogin();
+  const reason = sessionStorage.getItem('swifttill_logout_reason');
+  if(reason){
+    sessionStorage.removeItem('swifttill_logout_reason');
+    const card = document.querySelector('.login-card');
+    if(card) card.insertAdjacentHTML('afterbegin', `<div class="idle-login-note">${esc(reason)}</div>`);
+  }
+};
+
 boot();

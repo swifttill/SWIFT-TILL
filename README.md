@@ -1,3 +1,15 @@
+# SwiftTill POS V47 — Auto Logout Inactivity Security
+
+V47 keeps the online-only V46 day-open/day-close build and adds automatic POS security logout after inactivity.
+
+- 12-minute inactivity timeout.
+- Warning appears 60 seconds before logout.
+- Continue Session button resets timer.
+- Manual Logout and idle logout call `/api/session/logout` for audit.
+- Local token is cleared after timeout.
+- Dirty/current cart is auto-saved before idle logout when possible.
+- Offline concept remains removed; this is online-only.
+
 # SwiftTill POS V46
 
 Online-only stable POS with Business Day Open/Close, after-midnight sales grouping, compact reports and reduced print waste. Offline concept is removed/forgotten.
