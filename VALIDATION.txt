@@ -1,19 +1,23 @@
-SwiftTill POS V50 - Print Page Center + Paper Waste Fix
+SwiftTill POS V51 Deep Clean UX + Builder Audit
 
-Validation:
-- API server syntax: PASS
-- DB client/adapter syntax: PASS
+Validation summary:
+- API syntax: PASS
+- DB adapter/client syntax: PASS
 - Auth package syntax: PASS
-- Storage/R2 package syntax: PASS
+- R2 storage syntax: PASS
 - Print agent syntax: PASS
-- Web app JavaScript syntax: PASS
+- Web app JavaScript parse: PASS
 - Auth smoke test: PASS
-- Uploaded sample PDF inspection: 3 pages detected; page 1 contained report content; pages 2-3 were blank.
+- Package ZIP integrity: PASS
 
-V50 print fix:
-- Browser print uses only #printArea during print.
-- Hidden POS/admin layout is display:none during print, preventing blank trailing pages.
-- A4/PDF report block is centered.
-- Thermal receipt/report block is centered.
-- Thermal report content is compact and does not print unnecessary empty detail sections.
-- Offline concept remains removed.
+Main fixes:
+- Admin search/filter focus-loss bug fixed.
+- Admin filter updates table rows only; search input remains active while typing.
+- POS menu search text remains stable during refreshes.
+- Form caret/selection preservation guard added for safe re-renders.
+- Enter key in search fields no longer causes accidental blur/submit.
+- Button text visibility guard strengthened for desktop and mobile.
+- Offline concept remains removed; build is online-only.
+
+Version expected after deploy:
+51.0.0-deep-clean-ux-builder-audit

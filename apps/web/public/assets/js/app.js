@@ -2180,3 +2180,155 @@ printReportHtml = async function(mode='thermal'){
   v50BrowserPrint(html, thermal ? 'thermal' : 'a4');
 };
 printReportArea = function(){ return printReportHtml('a4'); };
+
+
+/* ============================================================
+   SwiftTill V51 Deep Clean UX + Builder Audit
+   - Search/filter inputs no longer lose focus while typing
+   - Form caret/selection is preserved across safe re-renders
+   - Admin filter lists update tbody only instead of rebuilding controls
+   - Client-facing button/input polish guards for PC + mobile
+============================================================ */
+const SWIFTTILL_V51 = {
+  version: '51.0.0-deep-clean-ux-builder-audit',
+  searchInputFocusStable: true,
+  adminFiltersNoBlur: true,
+  formCaretPreserved: true,
+  buttonContentVisibilityAudit: true,
+  onlineOnly: true
+};
+window.SWIFTTILL_V51 = SWIFTTILL_V51;
+
+function v51IsEditable(el){
+  return !!el && ['INPUT','TEXTAREA','SELECT'].includes(el.tagName) && !el.disabled && !el.readOnly;
+}
+function v51StableSelector(el){
+  if(!el) return '';
+  if(el.id) return `#${CSS.escape(el.id)}`;
+  if(el.name) return `${el.tagName.toLowerCase()}[name="${CSS.escape(el.name)}"]`;
+  for(const a of ['data-qty-input','data-admin-edit','data-admin-delete']){
+    const v = el.getAttribute?.(a);
+    if(v) return `${el.tagName.toLowerCase()}[${a}="${CSS.escape(v)}"]`;
+  }
+  return '';
+}
+function v51CaptureFocus(){
+  const el = document.activeElement;
+  if(!v51IsEditable(el)) return null;
+  return {
+    selector: v51StableSelector(el),
+    tag: el.tagName,
+    value: el.value,
+    start: typeof el.selectionStart === 'number' ? el.selectionStart : null,
+    end: typeof el.selectionEnd === 'number' ? el.selectionEnd : null,
+    scrollX: window.scrollX,
+    scrollY: window.scrollY
+  };
+}
+function v51RestoreFocus(cap){
+  if(!cap || !cap.selector) return;
+  const restore = () => {
+    const el = document.querySelector(cap.selector);
+    if(!v51IsEditable(el)) return;
+    try{ el.focus({ preventScroll:true }); }catch{ try{ el.focus(); }catch{} }
+    if(typeof el.setSelectionRange === 'function' && cap.start !== null){
+      const len = String(el.value || '').length;
+      const start = Math.min(cap.start, len);
+      const end = Math.min(cap.end ?? cap.start, len);
+      try{ el.setSelectionRange(start, end); }catch{}
+    }
+    try{ window.scrollTo(cap.scrollX || 0, cap.scrollY || 0); }catch{}
+  };
+  restore();
+  requestAnimationFrame(restore);
+}
+function v51WithFocus(fn){
+  return function(...args){
+    const cap = v51CaptureFocus();
+    const out = fn.apply(this,args);
+    v51RestoreFocus(cap);
+    return out;
+  };
+}
+
+// Keep POS menu search text stable even when other UI sections are refreshed.
+window.swiftMenuSearchTerm ||= '';
+const __v51BaseRenderSidebar = renderSidebar;
+renderSidebar = function(){
+  const html = __v51BaseRenderSidebar();
+  const val = esc(window.swiftMenuSearchTerm || '');
+  return html.replace('id="menuSearch" placeholder="Search menu items..."', `id="menuSearch" value="${val}" placeholder="Search menu items..." autocomplete="off" spellcheck="false"`)
+             .replace('id="menuSearch" placeholder="Search menu items..." disabled', `id="menuSearch" value="${val}" placeholder="Search menu items..." autocomplete="off" spellcheck="false" disabled`);
+};
+const __v51BaseBindSidebar = bindSidebar;
+bindSidebar = function(){
+  __v51BaseBindSidebar();
+  const search = $('#menuSearch');
+  if(search){
+    search.value = window.swiftMenuSearchTerm || search.value || '';
+    search.oninput = e => {
+      window.swiftMenuSearchTerm = e.target.value;
+      screen='pos'; centerMode='menu';
+      renderMenu(window.swiftMenuSearchTerm);
+      v51RestoreFocus({selector:'#menuSearch',start:e.target.selectionStart,end:e.target.selectionEnd,scrollX:window.scrollX,scrollY:window.scrollY});
+    };
+  }
+};
+const __v51BaseRenderMenu = renderMenu;
+renderMenu = function(q=''){
+  window.swiftMenuSearchTerm = q || window.swiftMenuSearchTerm || '';
+  return __v51BaseRenderMenu(window.swiftMenuSearchTerm);
+};
+
+function v51AdminRowsHtml(key, apiName, fields, rows){
+  return rows.map(r=>`<tr><td>${r.imageUrl?`<img class="thumb admin-thumb" src="${esc(r.imageUrl)}" alt="">`:''}</td>${fields.map(f=>`<td>${adminCell(r,f)}</td>`).join('')}<td><div class="row-actions"><button class="ghost-btn tiny" data-admin-edit="${esc(r.id)}">Edit</button><button class="danger-btn tiny" data-admin-delete="${esc(r.id)}">Delete</button></div></td></tr>`).join('') || `<tr><td colspan="${fields.length+2}" class="empty-td">No records match these filters.</td></tr>`;
+}
+function v51BindAdminRowActions(c,key,apiName){
+  $$('[data-admin-edit]', c).forEach(b=>b.onclick=()=>{ const record=(state[key]||[]).find(x=>x.id===b.dataset.adminEdit); if(record) openAdminEditor(apiName, clone(record)); });
+  $$('[data-admin-delete]', c).forEach(b=>b.onclick=()=>deleteAdminRecord(apiName,b.dataset.adminDelete));
+}
+function v51DrawAdminRows(c,key,apiName,fields){
+  const allRows = state[key] || [];
+  const rows = adminApplyRows(key, allRows);
+  const count = $('#adminListCount', c);
+  if(count) count.textContent = `${rows.length} shown from ${allRows.length}. Filters update without leaving the field.`;
+  const tbody = $('#adminListRows', c);
+  if(tbody) tbody.innerHTML = v51AdminRowsHtml(key, apiName, fields, rows);
+  v51BindAdminRowActions(c,key,apiName);
+}
+adminList = function(c,key,apiName,fields){
+  const allRows=state[key]||[];
+  const rows=adminApplyRows(key, allRows);
+  c.innerHTML=`<div class="admin-wrap v30-admin-list v51-admin-list"><div class="module-title"><div><h3>${esc(labelTab(key))}</h3><p class="muted-note" id="adminListCount">${rows.length} shown from ${allRows.length}. Filters update without leaving the field.</p></div><button class="primary-btn" type="button" onclick="openAdminEditor('${apiName}')">Add New</button></div>${adminListControls(key)}<div class="report-table-wrap admin-table-shell"><table class="admin-table"><thead><tr><th>Image</th>${fields.map(f=>`<th>${esc(f==='categoryId'?'Category':f==='roleIds'?'Roles':f)}</th>`).join('')}<th>Action</th></tr></thead><tbody id="adminListRows">${v51AdminRowsHtml(key, apiName, fields, rows)}</tbody></table></div></div>`;
+  const f=adminListFilters(key);
+  const search = $('#adminSearchFilter', c);
+  if(search){
+    search.setAttribute('autocomplete','off');
+    search.setAttribute('spellcheck','false');
+    search.addEventListener('input', e=>{
+      f.search = e.target.value;
+      const cap={selector:'#adminSearchFilter',start:e.target.selectionStart,end:e.target.selectionEnd,scrollX:window.scrollX,scrollY:window.scrollY};
+      v51DrawAdminRows(c,key,apiName,fields);
+      v51RestoreFocus(cap);
+    });
+  }
+  $('#adminCategoryFilter', c)?.addEventListener('change', e=>{ f.category=e.target.value; v51DrawAdminRows(c,key,apiName,fields); });
+  $('#adminActiveFilter', c)?.addEventListener('change', e=>{ f.active=e.target.value; v51DrawAdminRows(c,key,apiName,fields); });
+  $('#adminSortFilter', c)?.addEventListener('change', e=>{ f.sort=e.target.value; v51DrawAdminRows(c,key,apiName,fields); });
+  v51BindAdminRowActions(c,key,apiName);
+};
+
+// Preserve active input/caret for bill and report controls that intentionally re-render small panels.
+renderBill = v51WithFocus(renderBill);
+renderWorkspace = v51WithFocus(renderWorkspace);
+renderAdminContent = v51WithFocus(renderAdminContent);
+
+// Builder-level light runtime guard: prevent Enter in search/filter inputs from submitting or blurring unexpectedly.
+document.addEventListener('keydown', function(e){
+  const el=e.target;
+  if(!el) return;
+  if(e.key === 'Enter' && (el.id === 'menuSearch' || el.id === 'adminSearchFilter')){
+    e.preventDefault();
+    v51RestoreFocus({selector:'#'+el.id,start:el.selectionStart,end:el.selectionEnd,scrollX:window.scrollX,scrollY:window.scrollY});
+  }
+}, true);

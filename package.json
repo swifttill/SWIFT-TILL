@@ -1,8 +1,8 @@
 {
   "name": "swifttill-pos-monorepo",
-  "version": "50.0.0",
+  "version": "51.0.0",
   "private": true,
-  "description": "SwiftTill POS - V50 print page center and paper waste fix",
+  "description": "SwiftTill POS - V51 deep clean UX and builder audit",
   "workspaces": [
     "apps/api",
     "apps/web",

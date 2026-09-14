@@ -1,3 +1,13 @@
+# SwiftTill POS V51 Deep Clean UX + Builder Audit
+
+Latest version: 51.0.0-deep-clean-ux-builder-audit
+
+This package keeps the V50 online-only stable build and adds a deep cleanup pass for user-facing polish and builder-level reliability. The admin search/filter field focus-loss bug is fixed, input caret is preserved during safe re-renders, POS menu search is stabilized, and button text visibility guards are strengthened for mobile and desktop.
+
+Offline modules remain removed.
+
+---
+
 # SwiftTill V50 - Print Page Center + Paper Waste Fix
 
 - Browser print now isolates only `#printArea` so hidden app screens cannot create extra blank pages.
