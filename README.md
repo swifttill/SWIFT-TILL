@@ -1,3 +1,7 @@
+# SwiftTill POS V55 — Functionality Stabilization + Regression Audit
+
+V55 is a surgical stabilization package after the one-line action bar change. It preserves V54 visual fix but prevents newly created draft orders from being cleared by live sync before items are added. Offline concept remains removed; system is online-only.
+
 # SwiftTill POS V54 — One-Line Bill Actions
 
 This package keeps V53 functionality and fixes the current bill action bar so Print, Move, Split and Void are always kept on one professional horizontal row in the bill panel. Offline modules remain removed; online-only mode is preserved.

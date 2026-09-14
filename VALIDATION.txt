@@ -1,9 +1,10 @@
-SwiftTill V53 Validation
-API syntax PASS
-Web JavaScript syntax PASS
-CSS present PASS
-ZIP integrity PASS
-Online-only preserved PASS
-Paid Orders filters/sorting added PASS
-Open Orders filters/sorting added PASS
-Open order void/cancel access guard added PASS
+SwiftTill POS V55 Validation
+
+Scope: functionality stabilization after V54 one-line bill action patch.
+- API syntax check: PASS
+- Web JavaScript syntax check: PASS
+- Auth smoke test: PASS
+- Package integrity: PASS
+- Offline mode: removed / online-only preserved
+- Create Order draft preservation: patched
+- Cross-device sync draft clearing regression: patched

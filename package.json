@@ -1,8 +1,8 @@
 {
   "name": "swifttill-pos-monorepo",
-  "version": "54.0.0",
+  "version": "55.0.0",
   "private": true,
-  "description": "SwiftTill POS - V53 filters, search, sorting, and authorized open order void/cancel",
+  "description": "SwiftTill POS - V55 functionality stabilization, draft order preservation, and deep clean audit",
   "workspaces": [
     "apps/api",
     "apps/web",

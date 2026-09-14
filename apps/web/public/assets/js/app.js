@@ -2613,3 +2613,107 @@ document.addEventListener('keydown', function(e){
 }, true);
 
 document.documentElement.classList.add('v53-filter-void-audit');
+
+
+/* ============================================================
+   SwiftTill V55 Functionality Stabilization + Regression Audit
+   - Keep newly created draft order on billing screen.
+   - Live sync must not clear a local draft before item selection.
+   - Surgical patch only: no unrelated POS/Admin screen redesign.
+============================================================ */
+const SWIFTTILL_V55 = {
+  version: '55.0.0-functionality-stabilization-audit',
+  createOrderStayOnBilling: true,
+  draftOrderNotRemoteCleared: true,
+  surgicalClientPatch: true,
+  regressionAudit: true,
+  onlineOnly: true
+};
+window.SWIFTTILL_V55 = SWIFTTILL_V55;
+
+function v55OrderIsDraftWithoutLines(order){
+  return !!order && String(order.status || '').toUpperCase() === 'DRAFT' && !hasOrderLines(order);
+}
+function v55RefreshBillOnly(){
+  try{
+    if(screen === 'pos'){
+      renderBill();
+      const fab = $('#mobileCartFab b');
+      if(fab) fab.textContent = mobileCartSummary();
+      const pay = $('#mobilePayBill');
+      if(pay) pay.textContent = currentOrder && hasOrderLines(currentOrder) ? 'Pay Now' : 'Open Bill';
+    }
+  }catch(e){ console.warn('SwiftTill V55 bill refresh skipped:', e.message); }
+}
+function v55KeepDraftOrderAlive(sync){
+  if(!v55OrderIsDraftWithoutLines(currentOrder)) return false;
+  const id = currentOrder.id;
+  const current = sync?.currentOrder || null;
+  const status = String(current?.status || currentOrder.status || '').toUpperCase();
+  const paid = status === 'PAID' || (state?.paidOrders || []).some(o => o.id === id);
+  const terminal = ['PAID','VOID','CANCELLED','REFUNDED','CLOSED'].includes(status);
+  if(paid || terminal) return false;
+  // DRAFT orders are intentionally not part of openOrders until an item is added.
+  // Therefore cross-device polling must not treat missing openOrders entry as a closed bill.
+  if(current && current.id === id){
+    currentOrder.status = current.status || currentOrder.status || 'DRAFT';
+    currentOrder.number = current.number && current.number !== 'Draft' ? current.number : (currentOrder.number || '');
+  }
+  return true;
+}
+
+if(typeof reconcileRemoteState === 'function'){
+  const __v55BaseReconcileRemoteState = reconcileRemoteState;
+  reconcileRemoteState = function(sync){
+    if(v55KeepDraftOrderAlive(sync)){
+      v55RefreshBillOnly();
+      return;
+    }
+    return __v55BaseReconcileRemoteState(sync);
+  };
+}
+
+if(typeof submitNewOrder === 'function'){
+  const __v55BaseSubmitNewOrder = submitNewOrder;
+  submitNewOrder = async function(e){
+    if(e?.preventDefault) e.preventDefault();
+    const form = e?.target || document.querySelector('#newOrderForm');
+    if(!form) return __v55BaseSubmitNewOrder(e);
+    if(typeof v46RequireDay === 'function' && !v46RequireDay()) return;
+    const f = new FormData(form);
+    const data = Object.fromEntries(f);
+    data.type = selectedOrderType;
+    data.guests = Number(data.guests || 0);
+    data.deliveryFee = Number(data.deliveryFee || 0);
+    if(data.type === 'DINE_IN' && !data.tableId) return toast('Select table for Dine In order', true);
+    try{
+      const taker = state.orderTakers.find(t => t.id === data.orderTakerId);
+      data.orderTakerName = taker?.name || '';
+      if(typeof __suspendSyncUntil !== 'undefined') __suspendSyncUntil = Date.now() + 3500;
+      if(typeof __localDirtyOrder !== 'undefined') __localDirtyOrder = true;
+      const j = await api('/api/orders/create', data);
+      const created = clone(j.order);
+      currentOrder = created;
+      screen = 'pos';
+      centerMode = 'menu';
+      if(typeof setMobileBill === 'function') setMobileBill(false);
+      closeModal();
+      await loadState();
+      // loadState refreshes lists only; DRAFT orders are not in openOrders by design.
+      // Preserve the just-created DRAFT as the active bill so cashier can add items.
+      currentOrder = created;
+      renderShell();
+      toast('Order created. Add items to continue.');
+      setTimeout(() => {
+        if(currentOrder?.id === created.id && !hasOrderLines(currentOrder) && typeof __localDirtyOrder !== 'undefined'){
+          __localDirtyOrder = false;
+        }
+      }, 3500);
+    }catch(err){
+      if(typeof __localDirtyOrder !== 'undefined') __localDirtyOrder = false;
+      toast(err.message, true);
+    }
+  };
+}
+
+document.documentElement.classList.add('v55-functionality-stabilized');
